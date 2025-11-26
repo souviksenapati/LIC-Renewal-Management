@@ -1,0 +1,173 @@
+import { useState } from 'react';
+import { View, Text, TouchableOpacity, Alert, ActivityIndicator, StyleSheet } from 'react-native';
+import * as DocumentPicker from 'expo-document-picker';
+import { ref, uploadBytes } from 'firebase/storage';
+import { storage } from '../../firebaseConfig';
+import { StatusBar } from 'expo-status-bar';
+import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
+
+export default function UploadPDF() {
+    const [uploading, setUploading] = useState(false);
+    const router = useRouter();
+
+    const pickDocument = async () => {
+        try {
+            const result = await DocumentPicker.getDocumentAsync({
+                type: 'application/pdf',
+                copyToCacheDirectory: true,
+            });
+
+            if (result.canceled) {
+                return;
+            }
+
+            const file = result.assets[0];
+            uploadPDF(file.uri, file.name);
+
+        } catch (err) {
+            console.error("Error picking document:", err);
+        }
+    };
+
+    const uploadPDF = async (uri: string, filename: string) => {
+        setUploading(true);
+        try {
+            const response = await fetch(uri);
+            const blob = await response.blob();
+            const storageRef = ref(storage, `policy-uploads/${Date.now()}_${filename}`);
+
+            await uploadBytes(storageRef, blob);
+
+            Alert.alert(
+                'Success',
+                'PDF uploaded successfully! The system is processing it in the background. Policies will appear in the dashboard shortly.'
+            );
+            router.back();
+        } catch (error) {
+            console.error("Upload error:", error);
+            Alert.alert('Error', 'Failed to upload PDF');
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    return (
+        <View style={styles.container}>
+            <StatusBar style="light" />
+            <LinearGradient
+                colors={['#1e3a8a', '#1e40af', '#3b82f6'] as const}
+                style={styles.header}
+            >
+                <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+                    <Text style={styles.backButtonText}>←</Text>
+                </TouchableOpacity>
+                <Text style={styles.headerTitle}>Upload Policy PDF</Text>
+            </LinearGradient>
+
+            <View style={styles.content}>
+                <View style={styles.uploadBox}>
+                    <Text style={styles.icon}>📄</Text>
+                    <Text style={styles.title}>Select PDF File</Text>
+                    <Text style={styles.description}>
+                        Upload the "Premium Due List" PDF. The system will automatically parse and add policies.
+                    </Text>
+
+                    <TouchableOpacity
+                        style={[styles.uploadButton, uploading && styles.uploadButtonDisabled]}
+                        onPress={pickDocument}
+                        disabled={uploading}
+                    >
+                        {uploading ? (
+                            <ActivityIndicator color="#fff" style={styles.loader} />
+                        ) : (
+                            <Text style={styles.uploadButtonText}>Choose File</Text>
+                        )}
+                    </TouchableOpacity>
+                </View>
+            </View>
+        </View>
+    );
+}
+
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+        backgroundColor: '#ffffff',
+    },
+    header: {
+        paddingTop: 48,
+        paddingBottom: 24,
+        paddingHorizontal: 24,
+        borderBottomLeftRadius: 24,
+        borderBottomRightRadius: 24,
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    backButton: {
+        marginRight: 16,
+        backgroundColor: 'rgba(255, 255, 255, 0.2)',
+        padding: 8,
+        borderRadius: 20,
+    },
+    backButtonText: {
+        color: '#ffffff',
+        fontSize: 18,
+    },
+    headerTitle: {
+        color: '#ffffff',
+        fontSize: 20,
+        fontWeight: '700',
+        letterSpacing: 0.5,
+    },
+    content: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 24,
+    },
+    uploadBox: {
+        backgroundColor: '#eff6ff',
+        padding: 32,
+        borderRadius: 16,
+        alignItems: 'center',
+        width: '100%',
+        borderWidth: 2,
+        borderStyle: 'dashed',
+        borderColor: '#bfdbfe',
+    },
+    icon: {
+        fontSize: 60,
+        marginBottom: 16,
+    },
+    title: {
+        fontSize: 20,
+        fontWeight: '700',
+        color: '#1e3a8a',
+        marginBottom: 8,
+    },
+    description: {
+        color: '#6b7280',
+        textAlign: 'center',
+        marginBottom: 32,
+    },
+    uploadButton: {
+        backgroundColor: '#2563eb',
+        paddingHorizontal: 32,
+        paddingVertical: 16,
+        borderRadius: 12,
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    uploadButtonDisabled: {
+        opacity: 0.7,
+    },
+    uploadButtonText: {
+        color: '#ffffff',
+        fontSize: 18,
+        fontWeight: '700',
+    },
+    loader: {
+        marginRight: 8,
+    },
+});
