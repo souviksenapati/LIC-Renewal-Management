@@ -1,5 +1,6 @@
 {
   "projects": {
-    "default": "lic-app-874c6"
+    "default": "lic-app-874c6",
+    "testing": "lic-app-testing"
   }
 }

@@ -106,7 +106,10 @@ export default function AdminDashboard() {
                 <Text style={styles.headerSubtitle}>Welcome, {user?.email}</Text>
             </LinearGradient>
 
-            <ScrollView style={styles.scrollView}>
+            <ScrollView
+                style={styles.scrollView}
+                contentContainerStyle={{ paddingBottom: 100 }}
+            >
                 {/* Stats Cards */}
                 <View style={styles.statsContainer}>
                     <View style={styles.statCard}>

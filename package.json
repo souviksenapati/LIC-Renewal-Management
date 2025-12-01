@@ -4,6 +4,8 @@
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
+    "start:testing": "cross-env EXPO_PUBLIC_ENV=testing expo start",
+    "start:production": "cross-env EXPO_PUBLIC_ENV=production expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web"
@@ -30,6 +32,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.1.0",
+    "cross-env": "^10.1.0",
     "typescript": "~5.9.2"
   },
   "private": true

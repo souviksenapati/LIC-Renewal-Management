@@ -13,6 +13,8 @@ web-build/
 .env.local
 .env.*.local
 functions/.env
+functions/.env.testing
+functions/.env.production
 firebaseConfig.ts
 
 # Firebase

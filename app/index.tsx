@@ -123,34 +123,6 @@ export default function LoginScreen() {
                         </View>
                     </View>
 
-                    {/* Dev Tools (Subtle) */}
-                    <View style={styles.devTools}>
-                        <Text style={styles.devToolsTitle}>
-                            Developer Tools
-                        </Text>
-                        <View style={styles.devToolsButtons}>
-                            <TouchableOpacity
-                                style={styles.devToolButton}
-                                onPress={async () => {
-                                    const { seedDatabase } = await import('../lib/seed');
-                                    seedDatabase();
-                                }}
-                            >
-                                <Text style={styles.devToolButtonText}>Seed Policies</Text>
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                                style={styles.devToolButton}
-                                onPress={async () => {
-                                    const { createTestUsers } = await import('../lib/seed');
-                                    createTestUsers();
-                                }}
-                            >
-                                <Text style={styles.devToolButtonText}>Create Users</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-
                 </ScrollView>
             </KeyboardAvoidingView>
         </View>
@@ -275,29 +247,5 @@ const styles = StyleSheet.create({
     devTools: {
         marginTop: 48,
         alignItems: 'center',
-    },
-    devToolsTitle: {
-        color: 'rgba(255, 255, 255, 0.3)',
-        fontSize: 12,
-        fontWeight: '700',
-        textTransform: 'uppercase',
-        marginBottom: 12,
-        letterSpacing: 1.5,
-    },
-    devToolsButtons: {
-        flexDirection: 'row',
-        gap: 16,
-    },
-    devToolButton: {
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        borderRadius: 8,
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.1)',
-    },
-    devToolButtonText: {
-        color: 'rgba(255, 255, 255, 0.5)',
-        fontSize: 12,
     },
 });
