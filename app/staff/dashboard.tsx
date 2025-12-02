@@ -8,18 +8,24 @@ import { Policy } from '../../types';
 import { StatusBar } from 'expo-status-bar';
 import { useAuth } from '../../context/AuthContext';
 import * as ImagePicker from 'expo-image-picker';
+import ReceiptVerificationProgress from '../../components/ReceiptVerificationProgress';
 
 export default function StaffDashboard() {
     const { signOut, user } = useAuth();
     const [policies, setPolicies] = useState<Policy[]>([]);
     const [loading, setLoading] = useState(true);
     const [uploading, setUploading] = useState(false);
-
     const [pendingExpanded, setPendingExpanded] = useState(true);
     const [completedExpanded, setCompletedExpanded] = useState(false);
 
     const [selectedPolicy, setSelectedPolicy] = useState<Policy | null>(null);
     const [modalVisible, setModalVisible] = useState(false);
+    const [verificationInProgress, setVerificationInProgress] = useState(false);
+    const [uploadId, setUploadId] = useState('');
+
+    // Store errors per policy ID: { [policyId]: "Error message" }
+    const [failedPolicies, setFailedPolicies] = useState<Record<string, string>>({});
+    const [successMessage, setSuccessMessage] = useState('');
 
     useEffect(() => {
         const q = query(collection(db, 'policies'));
@@ -35,12 +41,27 @@ export default function StaffDashboard() {
         return () => unsubscribe();
     }, []);
 
+    // Sync selectedPolicy with real-time updates
+    useEffect(() => {
+        if (selectedPolicy) {
+            const updatedPolicy = policies.find(p => p.id === selectedPolicy.id);
+            if (updatedPolicy) {
+                setSelectedPolicy(updatedPolicy);
+            }
+        }
+    }, [policies]);
+
     const pendingPolicies = policies.filter(p => p.status === 'pending');
     const completedPolicies = policies.filter(p => p.status === 'verified');
 
     const openPolicyDetails = (policy: Policy) => {
         setSelectedPolicy(policy);
         setModalVisible(true);
+
+        // Reset transient states
+        setVerificationInProgress(false);
+        setSuccessMessage('');
+        setUploadId('');
     };
 
     const pickImage = async () => {
@@ -60,10 +81,20 @@ export default function StaffDashboard() {
 
     const uploadReceipt = async (policyId: string, uri: string) => {
         setUploading(true);
+        setSuccessMessage('');
+
+        // Clear error for this policy temporarily while retrying
+        setFailedPolicies(prev => {
+            const newErrors = { ...prev };
+            delete newErrors[policyId];
+            return newErrors;
+        });
+
         try {
             const response = await fetch(uri);
             const blob = await response.blob();
-            const filename = `receipts/${policyId}_${Date.now()}.jpg`;
+            const timestamp = Date.now();
+            const filename = `receipts/${policyId}_${timestamp}.jpg`;
             const storageRef = ref(storage, filename);
 
             await uploadBytes(storageRef, blob);
@@ -72,16 +103,50 @@ export default function StaffDashboard() {
             await updateDoc(doc(db, 'policies', policyId), {
                 receiptUrl: downloadURL,
                 uploadedBy: user?.uid,
-                uploadedAt: Date.now(),
+                uploadedAt: timestamp,
             });
 
-            Alert.alert('Success', 'Receipt uploaded successfully!');
-            setModalVisible(false);
+            // Start verification tracking
+            const uploadId = `${policyId}_${timestamp}`;
+            setUploadId(uploadId);
+            setVerificationInProgress(true);
+            setUploading(false);
         } catch (error) {
             console.error("Upload error:", error);
             Alert.alert('Error', 'Failed to upload receipt');
-        } finally {
             setUploading(false);
+        }
+    };
+
+    const handleVerificationComplete = (success: boolean, message?: string) => {
+        setVerificationInProgress(false);
+
+        if (!selectedPolicy) return;
+
+        if (success) {
+            // 1. Optimistically update status
+            setSelectedPolicy(prev => prev ? { ...prev, status: 'verified' } : null);
+
+            // 2. Clear any stored error for this policy
+            setFailedPolicies(prev => {
+                const newErrors = { ...prev };
+                delete newErrors[selectedPolicy.id];
+                return newErrors;
+            });
+
+            // 3. Show success message
+            setSuccessMessage('✅ Receipt verified successfully!');
+
+            // 4. Auto-hide success after 2 seconds
+            setTimeout(() => {
+                setSuccessMessage('');
+            }, 2000);
+        } else {
+            // Store error for this specific policy
+            setFailedPolicies(prev => ({
+                ...prev,
+                [selectedPolicy.id]: message || 'Verification failed'
+            }));
         }
     };
 
@@ -218,14 +283,38 @@ export default function StaffDashboard() {
                                     </View>
                                 </View>
 
-                                {selectedPolicy.receiptUrl && (
+                                {selectedPolicy.receiptUrl && !verificationInProgress && (
                                     <View style={styles.receiptSection}>
                                         <Text style={styles.receiptLabel}>Uploaded Receipt:</Text>
                                         <Image source={{ uri: selectedPolicy.receiptUrl }} style={styles.receiptImage} resizeMode="contain" />
                                     </View>
                                 )}
 
-                                {selectedPolicy.status === 'pending' && (
+                                {/* Inline Verification Progress */}
+                                {verificationInProgress && (
+                                    <ReceiptVerificationProgress
+                                        uploadId={uploadId}
+                                        onComplete={handleVerificationComplete}
+                                    />
+                                )}
+
+                                {/* Failure/Success message - show above upload button */}
+                                {(failedPolicies[selectedPolicy.id] || successMessage) && !verificationInProgress && (
+                                    <View style={[
+                                        styles.messageBanner,
+                                        successMessage ? styles.successBanner : styles.failureBanner
+                                    ]}>
+                                        <Text style={[
+                                            styles.messageText,
+                                            successMessage ? styles.successText : styles.failureText
+                                        ]}>
+                                            {successMessage || failedPolicies[selectedPolicy.id]}
+                                        </Text>
+                                    </View>
+                                )}
+
+                                {/* Upload button - show if pending and not processing */}
+                                {selectedPolicy.status === 'pending' && !verificationInProgress && (
                                     <TouchableOpacity
                                         style={[styles.uploadButton, uploading && styles.uploadButtonDisabled]}
                                         onPress={pickImage}
@@ -234,7 +323,9 @@ export default function StaffDashboard() {
                                         {uploading ? (
                                             <ActivityIndicator color="#fff" />
                                         ) : (
-                                            <Text style={styles.uploadButtonText}>📷 Upload Receipt</Text>
+                                            <Text style={styles.uploadButtonText}>
+                                                {failedPolicies[selectedPolicy.id] ? '📷 Retry Upload' : '📷 Upload Receipt'}
+                                            </Text>
                                         )}
                                     </TouchableOpacity>
                                 )}
@@ -476,6 +567,30 @@ const styles = StyleSheet.create({
         fontSize: 18,
         fontWeight: '700',
         marginRight: 8,
+    },
+    messageBanner: {
+        padding: 16,
+        borderRadius: 12,
+        alignItems: 'center',
+        marginBottom: 16,
+        borderWidth: 1,
+    },
+    successBanner: {
+        backgroundColor: '#f0fdf4',
+        borderColor: '#bbf7d0',
+    },
+    failureBanner: {
+        backgroundColor: '#fef2f2',
+        borderColor: '#fecaca',
+    },
+    messageText: {
+        fontWeight: '600',
+    },
+    successText: {
+        color: '#166534',
+    },
+    failureText: {
+        color: '#991b1b',
     },
     verifiedBanner: {
         backgroundColor: '#f0fdf4',

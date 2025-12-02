@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert, ScrollView, StyleSheet } from 'react-native';
-import { addDoc, collection } from 'firebase/firestore';
+import { addDoc, collection, updateDoc, doc } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -15,21 +15,39 @@ export default function AddPolicy() {
     const router = useRouter();
 
     const handleAdd = async () => {
+        // Validate all fields
         if (!policyNumber || !customerName || !amount || !dueDate) {
             Alert.alert('Error', 'Please fill in all fields');
             return;
         }
 
+        // Validate amount is a valid number
+        const numAmount = parseFloat(amount);
+        if (isNaN(numAmount) || numAmount <= 0) {
+            Alert.alert('Error', 'Please enter a valid amount greater than 0');
+            return;
+        }
+
+        // Validate date format (basic check)
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
+            Alert.alert('Error', 'Please enter date in YYYY-MM-DD format');
+            return;
+        }
+
         setLoading(true);
         try {
-            await addDoc(collection(db, 'policies'), {
-                policyNumber,
-                customerName,
-                amount: Number(amount),
+            const docRef = await addDoc(collection(db, 'policies'), {
+                policyNumber: policyNumber.trim(),
+                customerName: customerName.trim(),
+                amount: numAmount,
                 dueDate,
                 status: 'pending',
                 createdAt: Date.now()
             });
+
+            // Add id field for consistency with type definition
+            await updateDoc(docRef, { id: docRef.id });
+
             Alert.alert('Success', 'Policy added successfully');
             router.back();
         } catch (error) {

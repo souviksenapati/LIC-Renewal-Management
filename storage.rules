@@ -1,8 +1,22 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    match /{allPaths=**} {
-      allow read, write: if request.auth != null;
+    
+    // Helper to get user role from Firestore
+    function getUserRole() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role;
+    }
+    
+    // Receipts - staff can upload, everyone can read
+    match /receipts/{receiptFile} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && getUserRole() == 'staff';
+    }
+    
+    // Policy uploads - admin only
+    match /policy-uploads/{pdfFile} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && getUserRole() == 'admin';
     }
   }
 }

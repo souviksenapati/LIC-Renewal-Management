@@ -120,14 +120,20 @@ export default function AdminDashboard() {
                         <Text style={styles.statLabel}>Total Amount</Text>
                         <Text style={styles.statValue}>₹{stats.totalAmount.toLocaleString()}</Text>
                     </View>
-                    <View style={[styles.statCard, styles.statCardGreen]}>
+                    <TouchableOpacity
+                        style={[styles.statCard, styles.statCardGreen]}
+                        onPress={() => router.push('/admin/policies?status=verified')}
+                    >
                         <Text style={styles.statLabel}>Verified</Text>
                         <Text style={styles.statValueGreen}>{stats.verifiedCount}</Text>
-                    </View>
-                    <View style={[styles.statCard, styles.statCardOrange]}>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.statCard, styles.statCardOrange]}
+                        onPress={() => router.push('/admin/policies?status=pending')}
+                    >
                         <Text style={styles.statLabel}>Pending</Text>
                         <Text style={styles.statValueOrange}>{stats.pendingCount}</Text>
-                    </View>
+                    </TouchableOpacity>
                     <View style={[styles.statCard, styles.statCardBlue]}>
                         <Text style={styles.statLabel}>Total Commission</Text>
                         <Text style={styles.statValueBlue}>₹{stats.totalCommission.toLocaleString()}</Text>

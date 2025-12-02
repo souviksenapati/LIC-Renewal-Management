@@ -9,77 +9,215 @@ admin.initializeApp();
 const db = admin.firestore();
 const client = new vision.ImageAnnotatorClient();
 
-// OCR Verification Function
-exports.verifyReceipt = functions.storage.object().onFinalize(async (object) => {
-    const filePath = object.name;
+// Gemini-Powered Receipt Verification
+exports.verifyReceipt = functions
+    .runWith({ timeoutSeconds: 60, memory: '512MB' })
+    .storage.object().onFinalize(async (object) => {
+        const filePath = object.name;
 
-    if (!filePath.startsWith('receipts/')) return;
+        // Only process receipts
+        if (!filePath.startsWith('receipts/')) return;
 
-    const bucketName = object.bucket;
-    const fileUri = `gs://${bucketName}/${filePath}`;
+        // Extract policyId from filename: receipts/{policyId}_{timestamp}.jpg
+        const fileName = path.basename(filePath);
+        const policyId = fileName.split('_')[0];
 
-    try {
-        const [result] = await client.textDetection(fileUri);
-        const detections = result.textAnnotations;
+        if (!policyId) {
+            console.error('Could not extract policy ID from filename:', fileName);
+            return;
+        }
 
-        if (!detections || detections.length === 0) return;
+        console.log(`Processing receipt for policy: ${policyId}`);
 
-        const fullText = detections[0].description;
+        // Create processing log
+        const uploadId = fileName.replace(/\.(jpg|jpeg|png)$/i, '');
+        const logRef = db.collection('processing_logs').doc(uploadId);
 
-        // Extract policy number (9 digits or P-format)
-        const policyRegex = /P\d{5,}/;
-        const policyMatch = fullText.match(policyRegex) || fullText.match(/\b\d{9}\b/);
+        await logRef.set({
+            type: 'receipt',
+            policyId: policyId,
+            stage: 'uploading',
+            message: 'Receipt uploaded',
+            fileName: fileName,
+            startedAt: Date.now(),
+            status: 'in_progress'
+        });
 
-        if (!policyMatch) return;
+        try {
+            // Get policy data to verify against
+            const policyDoc = await db.collection('policies').doc(policyId).get();
 
-        const policyNumber = policyMatch[0];
-
-        // Extract customer name
-        const nameRegex = /\b([A-Z]{2,}\s+[A-Z]{2,}(?:\s+[A-Z]{2,})?(?:\s+[A-Z]{2,})?)\b/g;
-        const nameMatches = fullText.match(nameRegex);
-
-        // Query policies by policy number
-        const policiesRef = db.collection('policies');
-        const snapshot = await policiesRef.where('policyNumber', '==', policyNumber).get();
-
-        if (!snapshot.empty) {
-            const policyDoc = snapshot.docs[0];
-            const policyData = policyDoc.data();
-
-            // Verify customer name matches
-            let nameVerified = false;
-            if (nameMatches) {
-                const customerNameUpper = policyData.customerName.toUpperCase();
-                nameVerified = nameMatches.some(name => {
-                    const extractedName = name.trim().toUpperCase();
-                    return extractedName === customerNameUpper ||
-                        customerNameUpper.includes(extractedName) ||
-                        extractedName.includes(customerNameUpper);
+            if (!policyDoc.exists) {
+                console.error('Policy not found:', policyId);
+                await logRef.update({
+                    stage: 'failed',
+                    message: 'Policy not found',
+                    error: 'Policy does not exist',
+                    completedAt: Date.now(),
+                    status: 'error'
                 });
+                return;
             }
 
-            if (nameVerified) {
+            const policyData = policyDoc.data();
+            const expectedPolicyNumber = policyData.policyNumber;
+            const expectedCustomerName = policyData.customerName;
+
+            console.log(`Expected: Policy=${expectedPolicyNumber}, Name=${expectedCustomerName}`);
+
+            // Download image to temp file
+            const bucket = admin.storage().bucket(object.bucket);
+            const tempFilePath = path.join(os.tmpdir(), fileName);
+
+            await logRef.update({
+                stage: 'processing',
+                message: 'Analyzing receipt with AI...'
+            });
+
+            await bucket.file(filePath).download({ destination: tempFilePath });
+            const imageBuffer = fs.readFileSync(tempFilePath);
+            const imageBase64 = imageBuffer.toString('base64');
+
+            // Initialize Gemini
+            const { GoogleGenAI } = require('@google/genai');
+            const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+            const prompt = `Analyze this payment receipt image and extract:
+1. Policy Number (9-digit number only, numeric)
+2. Customer Name
+
+IMPORTANT:
+- Policy number is ALWAYS 9 digits, purely numeric (e.g., 508815995)
+- Extract the exact name as written on receipt
+- If information is unclear or not found, return null
+
+Return ONLY valid JSON (no markdown):
+{"policyNumber": "508815995", "customerName": "CHHABI DAS", "confidence": "high"}
+
+If not found:
+{"policyNumber": null, "customerName": null, "confidence": "low"}`;
+
+            console.log('Calling Gemini for receipt analysis...');
+
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.0-flash-exp',
+                contents: [{
+                    parts: [
+                        {
+                            inlineData: {
+                                mimeType: 'image/jpeg',
+                                data: imageBase64
+                            }
+                        },
+                        { text: prompt }
+                    ]
+                }]
+            });
+
+            const responseText = response.text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+            console.log('Gemini response:', responseText);
+
+            let extracted;
+            try {
+                extracted = JSON.parse(responseText);
+            } catch (parseError) {
+                console.error('Failed to parse Gemini response:', parseError);
+                throw new Error('Invalid JSON from Gemini');
+            }
+
+            const extractedPolicyNumber = extracted.policyNumber;
+            const extractedCustomerName = extracted.customerName;
+            const confidence = extracted.confidence || 'medium';
+
+            console.log(`Extracted: Policy=${extractedPolicyNumber}, Name=${extractedCustomerName}, Confidence=${confidence}`);
+
+            // Update log with extraction results
+            await logRef.update({
+                stage: 'verifying',
+                message: 'Verifying against policy data...',
+                extractedPolicyNumber,
+                extractedCustomerName,
+                confidence
+            });
+
+            // Verify policy number match
+            const policyNumberMatch = extractedPolicyNumber === expectedPolicyNumber;
+
+            // Verify customer name match (fuzzy)
+            let customerNameMatch = false;
+            if (extractedCustomerName && expectedCustomerName) {
+                const extractedUpper = extractedCustomerName.toUpperCase().trim();
+                const expectedUpper = expectedCustomerName.toUpperCase().trim();
+
+                customerNameMatch = extractedUpper === expectedUpper ||
+                    extractedUpper.includes(expectedUpper) ||
+                    expectedUpper.includes(extractedUpper);
+            }
+
+            console.log(`Verification: PolicyMatch=${policyNumberMatch}, NameMatch=${customerNameMatch}`);
+
+            // Determine verification result
+            const verificationPassed = policyNumberMatch && customerNameMatch;
+
+            if (verificationPassed) {
+                // Update policy status to verified
                 await policyDoc.ref.update({
                     status: 'verified',
                     verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
-                    ocrText: fullText,
-                    verificationMethod: 'ocr-auto'
+                    verificationMethod: 'gemini-auto',
+                    extractedData: {
+                        policyNumber: extractedPolicyNumber,
+                        customerName: extractedCustomerName,
+                        confidence
+                    }
                 });
-                console.log(`Policy ${policyNumber} auto-verified (name matched: ${policyData.customerName})`);
+
+                await logRef.update({
+                    stage: 'completed',
+                    message: 'Receipt verified successfully!',
+                    policyNumberMatch,
+                    customerNameMatch,
+                    verificationPassed: true,
+                    completedAt: Date.now(),
+                    status: 'success'
+                });
+
+                console.log(`✅ Policy ${policyId} verified successfully`);
             } else {
-                await policyDoc.ref.update({
-                    status: 'pending-review',
-                    ocrText: fullText,
-                    verificationMethod: 'ocr-failed-name-mismatch',
-                    ocrExtractedNames: nameMatches
+                // Verification failed - keep as pending, allow retry
+                const reasons = [];
+                if (!policyNumberMatch) reasons.push('Policy number mismatch');
+                if (!customerNameMatch) reasons.push('Customer name mismatch');
+
+                await logRef.update({
+                    stage: 'completed',
+                    message: `Verification failed: ${reasons.join(', ')}`,
+                    policyNumberMatch,
+                    customerNameMatch,
+                    verificationPassed: false,
+                    failureReasons: reasons,
+                    completedAt: Date.now(),
+                    status: 'error'
                 });
-                console.log(`Policy ${policyNumber} requires manual review (name mismatch)`);
+
+                console.log(`❌ Policy ${policyId} verification failed: ${reasons.join(', ')}`);
             }
+
+            // Cleanup
+            fs.unlinkSync(tempFilePath);
+
+        } catch (error) {
+            console.error('Error processing receipt:', error);
+
+            await logRef.update({
+                stage: 'failed',
+                message: 'Processing error',
+                error: error.message || 'Unknown error',
+                completedAt: Date.now(),
+                status: 'error'
+            }).catch(err => console.error('Failed to update error status:', err));
         }
-    } catch (error) {
-        console.error('Error processing receipt:', error);
-    }
-});
+    });
 
 // PDF Parsing Function using Gemini 2.5 Flash
 exports.processPdfUpload = functions
@@ -92,6 +230,19 @@ exports.processPdfUpload = functions
         const bucket = admin.storage().bucket(object.bucket);
         const fileName = path.basename(filePath);
         const tempFilePath = path.join(os.tmpdir(), fileName);
+
+        // Create processing log document
+        const uploadId = fileName.replace('.pdf', '');
+        const logRef = db.collection('processing_logs').doc(uploadId);
+
+        // Update status: uploading complete, now processing
+        await logRef.set({
+            stage: 'processing',
+            message: 'Analyzing PDF content...',
+            fileName: fileName,
+            startedAt: Date.now(),
+            status: 'in_progress'
+        });
 
         try {
             await bucket.file(filePath).download({ destination: tempFilePath });
@@ -114,6 +265,12 @@ Example:
 [{"policyNumber":"508815995","customerName":"CHHABI DAS","mod":"Qly","fup":"05/2025","amount":2865.00,"commission":1599.00}]`;
 
             console.log('Sending PDF to Gemini 2.5 Flash...');
+
+            // Update status: parsing with Gemini
+            await logRef.update({
+                stage: 'parsing',
+                message: 'Extracting policy data with AI...',
+            });
 
             const response = await ai.models.generateContent({
                 model: 'gemini-2.5-flash',
@@ -156,27 +313,60 @@ Example:
             console.log(`${validPolicies.length} valid policies`);
 
             if (validPolicies.length > 0) {
-                const batch = db.batch();
-                validPolicies.forEach(p => {
-                    const docRef = db.collection('policies').doc();
-                    batch.set(docRef, {
-                        id: docRef.id,  // Add document ID
-                        policyNumber: p.policyNumber,
-                        customerName: p.customerName,
-                        mod: p.mod,
-                        fup: p.fup,
-                        amount: parseFloat(p.amount),
-                        commission: parseFloat(p.commission || 0),
-                        dueDate: '2025-12-31',
-                        status: 'pending',
-                        createdAt: Date.now()
-                    });
-                });
+                const BATCH_SIZE = 400; // Safe limit below Firestore's 500 operation limit
+                const chunks = [];
 
-                await batch.commit();
-                console.log(`✅ Created ${validPolicies.length} policies`);
+                // Split policies into chunks
+                for (let i = 0; i < validPolicies.length; i += BATCH_SIZE) {
+                    chunks.push(validPolicies.slice(i, i + BATCH_SIZE));
+                }
+
+                console.log(`Processing ${validPolicies.length} policies in ${chunks.length} batch(es)`);
+
+                // Process each chunk
+                for (let i = 0; i < chunks.length; i++) {
+                    const batch = db.batch();
+                    chunks[i].forEach(p => {
+                        const docRef = db.collection('policies').doc();
+                        batch.set(docRef, {
+                            id: docRef.id,
+                            policyNumber: p.policyNumber,
+                            customerName: p.customerName,
+                            mod: p.mod,
+                            fup: p.fup,
+                            amount: parseFloat(p.amount),
+                            commission: parseFloat(p.commission || 0),
+                            dueDate: '2025-12-31',
+                            status: 'pending',
+                            createdAt: Date.now()
+                        });
+                    });
+
+                    await batch.commit();
+                    console.log(`✅ Batch ${i + 1}/${chunks.length} committed (${chunks[i].length} policies)`);
+                }
+
+                console.log(`✅ Created ${validPolicies.length} policies total`);
+
+                // Update status: completed successfully
+                await logRef.update({
+                    stage: 'completed',
+                    message: 'Successfully processed!',
+                    policiesFound: validPolicies.length,
+                    completedAt: Date.now(),
+                    status: 'success'
+                });
             } else {
                 console.log('⚠️ No valid policies found');
+
+                // Update status: completed but no policies
+                await logRef.update({
+                    stage: 'completed',
+                    message: 'No valid policies found in PDF',
+                    policiesFound: 0,
+                    completedAt: Date.now(),
+                    status: 'warning'
+                });
             }
 
             fs.unlinkSync(tempFilePath);
@@ -184,5 +374,14 @@ Example:
         } catch (error) {
             console.error('Error with Gemini:', error);
             if (error.message) console.error('Message:', error.message);
+
+            // Update status: failed
+            await logRef.update({
+                stage: 'failed',
+                message: 'Processing failed',
+                error: error.message || 'Unknown error',
+                completedAt: Date.now(),
+                status: 'error'
+            }).catch(err => console.error('Failed to update error status:', err));
         }
     });

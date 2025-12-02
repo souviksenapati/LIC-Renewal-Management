@@ -4,12 +4,69 @@ import * as DocumentPicker from 'expo-document-picker';
 import { ref, uploadBytes } from 'firebase/storage';
 import { storage } from '../../firebaseConfig';
 import { StatusBar } from 'expo-status-bar';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useCallback } from 'react';
+import ProcessingStatusModal from '../../components/ProcessingStatusModal';
+
+const PROCESSING_STATE_KEY = 'pdf_processing_state';
 
 export default function UploadPDF() {
     const [uploading, setUploading] = useState(false);
+    const [processingModalVisible, setProcessingModalVisible] = useState(false);
+    const [uploadId, setUploadId] = useState('');
+    const [minimized, setMinimized] = useState(false);
     const router = useRouter();
+
+    // Load processing state when screen gains focus
+    useFocusEffect(
+        useCallback(() => {
+            loadProcessingState();
+        }, [])
+    );
+
+    const loadProcessingState = async () => {
+        try {
+            const saved = await AsyncStorage.getItem(PROCESSING_STATE_KEY);
+            if (saved) {
+                const { uploadId: savedId, timestamp, minimized } = JSON.parse(saved);
+                // Only restore if less than 10 minutes old
+                if (Date.now() - timestamp < 600000) {
+                    setUploadId(savedId);
+                    setProcessingModalVisible(true);
+                    setMinimized(minimized || false); // Restore minimized state
+                } else {
+                    // Clear old state
+                    await AsyncStorage.removeItem(PROCESSING_STATE_KEY);
+                }
+            }
+        } catch (error) {
+            console.error('Error loading processing state:', error);
+        }
+    };
+
+    const saveProcessingState = async (uploadId: string, minimized: boolean = false) => {
+        try {
+            await AsyncStorage.setItem(PROCESSING_STATE_KEY, JSON.stringify({
+                uploadId,
+                timestamp: Date.now(),
+                minimized
+            }));
+        } catch (error) {
+            console.error('Error saving processing state:', error);
+        }
+    };
+
+    const clearProcessingState = async () => {
+        try {
+            await AsyncStorage.removeItem(PROCESSING_STATE_KEY);
+            setProcessingModalVisible(false);
+            setUploadId('');
+        } catch (error) {
+            console.error('Error clearing processing state:', error);
+        }
+    };
 
     const pickDocument = async () => {
         try {
@@ -35,20 +92,34 @@ export default function UploadPDF() {
         try {
             const response = await fetch(uri);
             const blob = await response.blob();
-            const storageRef = ref(storage, `policy-uploads/${Date.now()}_${filename}`);
+            const timestamp = Date.now();
+            const uploadId = `${timestamp}_${filename.replace('.pdf', '')}`;
+            const storageRef = ref(storage, `policy-uploads/${uploadId}.pdf`);
 
             await uploadBytes(storageRef, blob);
 
-            Alert.alert(
-                'Success',
-                'PDF uploaded successfully! The system is processing it in the background. Policies will appear in the dashboard shortly.'
-            );
-            router.back();
+            // Show processing modal and save state
+            setUploadId(uploadId);
+            setProcessingModalVisible(true);
+            await saveProcessingState(uploadId);
+            setUploading(false);
+
         } catch (error) {
             console.error("Upload error:", error);
             Alert.alert('Error', 'Failed to upload PDF');
-        } finally {
             setUploading(false);
+        }
+    };
+
+    const handleDismiss = async () => {
+        await clearProcessingState();
+    };
+
+    const handleMinimizeChange = async (isMinimized: boolean) => {
+        setMinimized(isMinimized);
+        // Save minimized state
+        if (uploadId) {
+            await saveProcessingState(uploadId, isMinimized);
         }
     };
 
@@ -73,19 +144,40 @@ export default function UploadPDF() {
                         Upload the "Premium Due List" PDF. The system will automatically parse and add policies.
                     </Text>
 
-                    <TouchableOpacity
-                        style={[styles.uploadButton, uploading && styles.uploadButtonDisabled]}
-                        onPress={pickDocument}
-                        disabled={uploading}
-                    >
-                        {uploading ? (
-                            <ActivityIndicator color="#fff" style={styles.loader} />
-                        ) : (
-                            <Text style={styles.uploadButtonText}>Choose File</Text>
-                        )}
-                    </TouchableOpacity>
+                    {!processingModalVisible ? (
+                        <TouchableOpacity
+                            style={[styles.uploadButton, uploading && styles.uploadButtonDisabled]}
+                            onPress={pickDocument}
+                            disabled={uploading}
+                        >
+                            {uploading ? (
+                                <ActivityIndicator color="#fff" />
+                            ) : (
+                                <Text style={styles.uploadButtonText}>Choose File</Text>
+                            )}
+                        </TouchableOpacity>
+                    ) : (
+                        <View style={styles.processingInfo}>
+                            <Text style={styles.processingText}>
+                                {minimized ? '⬇ Processing minimized below' : '⏳ Processing in progress...'}
+                            </Text>
+                            <Text style={styles.processingSubtext}>
+                                Upload disabled while processing
+                            </Text>
+                        </View>
+                    )}
                 </View>
             </View>
+
+            {/* Processing Status Modal */}
+            <ProcessingStatusModal
+                visible={processingModalVisible}
+                type="pdf"
+                uploadId={uploadId}
+                onDismiss={handleDismiss}
+                minimized={minimized}
+                onMinimizeChange={handleMinimizeChange}
+            />
         </View>
     );
 }
@@ -167,7 +259,18 @@ const styles = StyleSheet.create({
         fontSize: 18,
         fontWeight: '700',
     },
-    loader: {
-        marginRight: 8,
+    processingInfo: {
+        alignItems: 'center',
+        paddingVertical: 16,
+    },
+    processingText: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#2563eb',
+        marginBottom: 4,
+    },
+    processingSubtext: {
+        fontSize: 13,
+        color: '#6b7280',
     },
 });
