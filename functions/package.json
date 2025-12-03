@@ -5,6 +5,8 @@
         "serve": "firebase emulators:start --only functions",
         "shell": "firebase functions:shell",
         "start": "npm run shell",
+        "predeploy": "shx cp .env.production .env",
+        "predeploy:testing": "shx cp .env.testing .env",
         "deploy": "firebase deploy --only functions",
         "logs": "firebase functions:log"
     },
@@ -13,6 +15,7 @@
     },
     "main": "index.js",
     "dependencies": {
+        "@google-cloud/documentai": "^9.5.0",
         "@google-cloud/vision": "^4.0.0",
         "@google/genai": "^1.30.0",
         "firebase-admin": "^12.0.0",

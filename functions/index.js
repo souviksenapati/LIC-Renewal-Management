@@ -254,15 +254,78 @@ exports.processPdfUpload = functions
 
             const pdfBase64 = dataBuffer.toString('base64');
 
-            const prompt = `Extract ALL policy information from this LIC Premium Due List PDF.
+            const prompt = `You are a precise data extraction tool. Extract policy information from this LIC Premium Due List PDF table.
 
-RULES:
-1. IGNORE headers (Branch Code, Agent Name, column headers)
-2. Extract: policyNumber (9 digits), customerName, mod (Qly/Hly/Yly), fup (MM/YYYY), amount (TotPrem), commission (EstCom - last column)
-3. Return ONLY JSON array, no markdown
+CRITICAL RULES - FOLLOW EXACTLY:
+1. Process ONE ROW at a time from the TABLE ONLY
+2. Each table row = ONE separate JSON object
+3. Create an array of objects - do NOT merge multiple rows into one object
+4. COMPLETELY IGNORE:
+   - LIC logo and letterhead at top
+   - Branch Code, Branch Name
+   - Agent Name, Agent Code
+   - Title "Premium Due List For The Agent..."
+   - Column header row (S.No, PolicyNo, Name of Assured, etc.)
+   - Page numbers and footers
+   - ANY text that is NOT a data row in the table
 
-Example:
-[{"policyNumber":"508815995","customerName":"CHHABI DAS","mod":"Qly","fup":"05/2025","amount":2865.00,"commission":1599.00}]`;
+TABLE STRUCTURE (13 columns total):
+Column 1: S.No
+Column 2: PolicyNo (9 digits) → Extract as "policyNumber"
+Column 3: Name of Assured → Extract as "customerName"
+Column 4: D.o.C (date)
+Column 5: Pln/Tm (plan/term)
+Column 6: Mod (mode) → Extract as "mod"
+Column 7: FUP (follow-up) → Extract as "fup"
+Column 8: Flg (flag)
+Column 9: InstPrem (installment premium) → DO NOT USE THIS
+Column 10: Due (due count)
+Column 11: GST (tax amount)
+Column 12: TotPrem (TOTAL PREMIUM) → Extract as "amount" ⚠️ THIS IS THE AMOUNT!
+Column 13: EstCom (estimated commission) → Extract as "commission"
+
+⚠️ CRITICAL - READ THE CORRECT AMOUNT COLUMN:
+- "amount" = Column 12 (TotPrem) - This is the LAST number before commission
+- DO NOT use Column 9 (InstPrem) - this is installment premium, NOT total
+- TotPrem is usually LARGER than InstPrem
+- TotPrem appears RIGHT BEFORE the last column (EstCom)
+
+EXAMPLE ROW FROM PDF:
+1  508515995  CHHABI DAS  14/02/2025  736/25  Qly  05/2025  FY  2665.00  3  300.00  8295  1599.00
+   ↑          ↑                                ↑           ↑                      ↑      ↑     ↑
+   S.No       PolicyNo                         Mod         FUP                   InstPrem  TotPrem  EstCom
+                                                                                  (skip)   (USE THIS!) 
+
+CORRECT EXTRACTION for above row:
+{
+  "policyNumber": "508515995",
+  "customerName": "CHHABI DAS",
+  "mod": "Qly",
+  "fup": "05/2025",
+  "amount": 8295,        ← TotPrem (Column 12)
+  "commission": 1599.00  ← EstCom (Column 13)
+}
+
+WRONG - DO NOT DO THIS:
+{
+  "amount": 2665  ← This is InstPrem (Column 9), NOT TotPrem!
+}
+
+FIELD TYPES:
+- policyNumber: string (9 digits)
+- customerName: string
+- mod: string ("Qly", "Hly", or "Yly")
+- fup: string (MM/YYYY format)
+- amount: number (from TotPrem column - the larger amount)
+- commission: number (from EstCom column - last column)
+
+IMPORTANT:
+- Return ONLY valid JSON array, no markdown, no code blocks
+- Each row = one object
+- Amount must be from TotPrem column (column 12)
+- All amounts as numbers (not strings)
+
+Extract ALL data rows from the table now:`;
 
             console.log('Sending PDF to Gemini 2.5 Flash...');
 
@@ -289,16 +352,18 @@ Example:
                 ]
             });
 
-            console.log('Gemini response received');
             const responseText = response.text;
-            console.log('Response (first 500 chars):', responseText.substring(0, 500));
 
             // Parse JSON
             let policies = [];
             try {
                 const jsonStr = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
                 policies = JSON.parse(jsonStr);
-                console.log(`Gemini extracted ${policies.length} policies`);
+
+                // LOG PARSED JSON FOR DEBUGGING
+                console.log('=== GEMINI EXTRACTED POLICIES ===');
+                console.log(JSON.stringify(policies, null, 2));
+                console.log(`=== Total: ${policies.length} policies ===`);
             } catch (parseError) {
                 console.error('Failed to parse JSON:', parseError);
                 console.error('Response:', responseText);
