@@ -4,7 +4,8 @@ service cloud.firestore {
     
     // Helper function to check user role
     function getUserRole() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+      let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      return userDoc != null && userDoc.data != null ? userDoc.data.role : null;
     }
     
     // Policies collection

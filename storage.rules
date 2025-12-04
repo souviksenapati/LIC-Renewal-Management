@@ -4,19 +4,26 @@ service firebase.storage {
     
     // Helper to get user role from Firestore
     function getUserRole() {
-      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role;
+      let userDoc = firestore.get(/databases/(default)/documents/users/$(request.auth.uid));
+      return userDoc != null && userDoc.data != null ? userDoc.data.role : null;
     }
     
-    // Receipts - staff can upload, everyone can read
+    // Receipts - staff can upload images only, max 10MB
     match /receipts/{receiptFile} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null && getUserRole() == 'staff';
+      allow write: if request.auth != null && 
+                   getUserRole() == 'staff' &&
+                   request.resource.size < 10 * 1024 * 1024 &&
+                   request.resource.contentType.matches('image/(jpeg|jpg|png)');
     }
     
-    // Policy uploads - admin only
+    // Policy uploads - admin only, PDFs only, max 50MB
     match /policy-uploads/{pdfFile} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null && getUserRole() == 'admin';
+      allow write: if request.auth != null && 
+                   getUserRole() == 'admin' &&
+                   request.resource.size < 50 * 1024 * 1024 &&
+                   request.resource.contentType == 'application/pdf';
     }
   }
 }

@@ -16,7 +16,8 @@ export interface Policy {
     customerName: string;
     amount: number;
     commission?: number; // Estimated Commission from PDF (hidden from staff, visible to admin)
-    dueDate: string; // ISO date string YYYY-MM-DD
+    dueDate: string; // DD/MM/YYYY format
+    dateOfCommencement?: string; // Policy start date DD/MM/YYYY (from D.o.C column)
     fup?: string; // First Unpaid Premium date
     mod?: string; // Mode (Qly, Hly, Yly, etc.)
     status: PolicyStatus;
