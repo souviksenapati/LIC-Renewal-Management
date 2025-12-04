@@ -68,7 +68,7 @@ export default function StaffDashboard() {
         if (!selectedPolicy) return;
 
         const result = await ImagePicker.launchCameraAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            mediaTypes: ['images'],
             allowsEditing: true,
             aspect: [4, 3],
             quality: 0.5,
@@ -269,9 +269,16 @@ export default function StaffDashboard() {
 
                                     <View style={styles.detailRowDouble}>
                                         <View style={styles.detailHalf}>
+                                            <Text style={styles.detailLabel}>Due Date</Text>
+                                            <Text style={styles.detailValue}>{selectedPolicy.dueDate}</Text>
+                                        </View>
+                                        <View style={styles.detailHalf}>
                                             <Text style={styles.detailLabel}>FUP Date</Text>
                                             <Text style={styles.detailValue}>{selectedPolicy.fup || 'N/A'}</Text>
                                         </View>
+                                    </View>
+
+                                    <View style={styles.detailRowDouble}>
                                         <View style={styles.detailHalf}>
                                             <Text style={styles.detailLabel}>Status</Text>
                                             <View style={[styles.statusBadge, selectedPolicy.status === 'verified' ? styles.statusVerified : styles.statusPending]}>
@@ -279,6 +286,9 @@ export default function StaffDashboard() {
                                                     {selectedPolicy.status.toUpperCase()}
                                                 </Text>
                                             </View>
+                                        </View>
+                                        <View style={styles.detailHalf}>
+                                            {/* Empty placeholder for layout balance */}
                                         </View>
                                     </View>
                                 </View>

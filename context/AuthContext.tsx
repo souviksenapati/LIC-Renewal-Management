@@ -65,10 +65,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         const inAuthGroup = segments[0] === 'admin' || segments[0] === 'staff';
 
-        if (!user && inAuthGroup && segments.length > 1 && (segments as string[])[1] !== 'login') {
+        if (!user && inAuthGroup) {
             // Redirect to home if not logged in and trying to access protected routes
+            router.replace('/');
         }
-    }, [user, role, segments, isLoading]);
+    }, [user, role, segments, isLoading, router]);
 
     const signIn = async (email: string, pass: string, expectedRole: UserRole) => {
         try {

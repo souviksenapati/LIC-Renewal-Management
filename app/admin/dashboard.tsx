@@ -20,6 +20,8 @@ export default function AdminDashboard() {
         totalAmount: 0,
         totalCommission: 0
     });
+    const [loadingStats, setLoadingStats] = useState(true);
+    const [clearing, setClearing] = useState(false);
 
     useFocusEffect(
         useCallback(() => {
@@ -29,6 +31,7 @@ export default function AdminDashboard() {
 
     const fetchStats = async () => {
         try {
+            setLoadingStats(true);
             const q = query(collection(db, 'policies'));
             const querySnapshot = await getDocs(q);
 
@@ -53,40 +56,68 @@ export default function AdminDashboard() {
             setStats({ totalDue, verifiedCount, pendingCount, totalAmount, totalCommission });
         } catch (error) {
             console.error("Error fetching stats:", error);
+        } finally {
+            setLoadingStats(false);
         }
     };
 
     const clearAllPolicies = async () => {
         try {
+            setClearing(true);
             const q = query(collection(db, 'policies'));
             const querySnapshot = await getDocs(q);
 
-            const deletePromises = querySnapshot.docs.map(doc => deleteDoc(doc.ref));
-            await Promise.all(deletePromises);
+            // Batch deletions to prevent memory issues (max 500 per batch)
+            const BATCH_SIZE = 500;
+            const totalDocs = querySnapshot.size;
+            let deleted = 0;
 
-            Alert.alert('Success', `Deleted ${querySnapshot.size} policies`);
+            for (let i = 0; i < querySnapshot.docs.length; i += BATCH_SIZE) {
+                const batch = querySnapshot.docs.slice(i, i + BATCH_SIZE);
+                const deletePromises = batch.map(doc => deleteDoc(doc.ref));
+                await Promise.all(deletePromises);
+                deleted += batch.length;
+                console.log(`Deleted ${deleted}/${totalDocs} policies`);
+            }
+
+            Alert.alert('Success', `Deleted ${totalDocs} policies`);
             fetchStats();
             setClearModalVisible(false);
         } catch (error) {
             console.error("Error clearing policies:", error);
             Alert.alert('Error', 'Failed to clear policies');
+        } finally {
+            setClearing(false);
         }
     };
 
     const clearVerifiedPolicies = async () => {
         try {
+            setClearing(true);
             const q = query(collection(db, 'policies'), where('status', '==', 'verified'));
             const querySnapshot = await getDocs(q);
 
-            const deletePromises = querySnapshot.docs.map(doc => deleteDoc(doc.ref));
-            await Promise.all(deletePromises);
+            // Batch deletions to prevent memory issues (max 500 per batch)
+            const BATCH_SIZE = 500;
+            const totalDocs = querySnapshot.size;
+            let deleted = 0;
 
-            Alert.alert('Success', `Deleted ${querySnapshot.size} verified policies`);
+            for (let i = 0; i < querySnapshot.docs.length; i += BATCH_SIZE) {
+                const batch = querySnapshot.docs.slice(i, i + BATCH_SIZE);
+                const deletePromises = batch.map(doc => deleteDoc(doc.ref));
+                await Promise.all(deletePromises);
+                deleted += batch.length;
+                console.log(`Deleted ${deleted}/${totalDocs} verified policies`);
+            }
+
+            Alert.alert('Success', `Deleted ${totalDocs} verified policies`);
             fetchStats();
             setClearModalVisible(false);
         } catch (error) {
             console.error("Error clearing verified policies:", error);
             Alert.alert('Error', 'Failed to clear verified policies');
+        } finally {
+            setClearing(false);
         }
     };
 

@@ -14,10 +14,19 @@ export default function LoginScreen() {
     const router = useRouter();
 
     const handleLogin = async () => {
-        if (!email || !password) {
-            Alert.alert('Error', 'Please fill in all fields');
+        // Email validation
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!email || !emailRegex.test(email)) {
+            Alert.alert('Invalid Email', 'Please enter a valid email address');
             return;
         }
+
+        // Password validation
+        if (!password || password.length < 6) {
+            Alert.alert('Invalid Password', 'Password must be at least 6 characters long');
+            return;
+        }
+
         setLoading(true);
         try {
             await signIn(email, password, activeTab);

@@ -8,13 +8,23 @@ const fs = require('fs');
 admin.initializeApp();
 const db = admin.firestore();
 
-// Validate required environment variables
-if (!process.env.GEMINI_API_KEY) {
-    throw new Error('GEMINI_API_KEY environment variable is required');
+// Lazy-initialize Gemini AI client (initialized on first use to avoid deployment errors)
+let geminiClient = null;
+function getGeminiClient() {
+    if (!geminiClient) {
+        if (!process.env.GEMINI_API_KEY) {
+            throw new Error('GEMINI_API_KEY environment variable is required');
+        }
+        geminiClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    }
+    return geminiClient;
 }
 
-// Initialize Gemini AI client
-const geminiClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+// Helper function to parse Gemini JSON responses
+function parseGeminiResponse(responseText) {
+    const cleanedText = responseText.replace(/```(json)?\n?/g, '').trim();
+    return JSON.parse(cleanedText);
+}
 
 // Gemini-Powered Receipt Verification
 exports.verifyReceipt = functions
@@ -70,7 +80,7 @@ exports.verifyReceipt = functions
             const expectedPolicyNumber = policyData.policyNumber;
             const expectedCustomerName = policyData.customerName;
 
-            console.log(`Expected: Policy=${expectedPolicyNumber}, Name=${expectedCustomerName}`);
+            console.log(`Expected policy ID: ${policyId}`);
 
             // Download image to temp file
             const bucket = admin.storage().bucket(object.bucket);
@@ -83,7 +93,7 @@ exports.verifyReceipt = functions
 
             try {
                 await bucket.file(filePath).download({ destination: tempFilePath });
-                const imageBuffer = fs.readFileSync(tempFilePath);
+                const imageBuffer = await fs.promises.readFile(tempFilePath);
                 const imageBase64 = imageBuffer.toString('base64');
 
                 const prompt = `Analyze this payment receipt image and extract:
@@ -103,7 +113,7 @@ If not found:
 
                 console.log('Calling Gemini for receipt analysis...');
 
-                const response = await geminiClient.models.generateContent({
+                const response = await getGeminiClient().models.generateContent({
                     model: 'gemini-2.0-flash-exp',
                     contents: [{
                         parts: [
@@ -118,12 +128,12 @@ If not found:
                     }]
                 });
 
-                const responseText = response.text.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();
+                const responseText = response.text;
                 console.log('Gemini response:', responseText);
 
                 let extracted;
                 try {
-                    extracted = JSON.parse(responseText);
+                    extracted = parseGeminiResponse(responseText);
                 } catch (parseError) {
                     console.error('Failed to parse Gemini response:', parseError);
                     throw new Error('Invalid JSON from Gemini');
@@ -133,7 +143,7 @@ If not found:
                 const extractedCustomerName = extracted.customerName;
                 const confidence = extracted.confidence || 'medium';
 
-                console.log(`Extracted: Policy=${extractedPolicyNumber}, Name=${extractedCustomerName}, Confidence=${confidence}`);
+                console.log(`Extracted data for policy: ${policyId}, Confidence=${confidence}`);
 
                 // Update log with extraction results
                 await logRef.update({
@@ -259,7 +269,7 @@ exports.processPdfUpload = functions
         try {
             try {
                 await bucket.file(filePath).download({ destination: tempFilePath });
-                const dataBuffer = fs.readFileSync(tempFilePath);
+                const dataBuffer = await fs.promises.readFile(tempFilePath);
 
                 const pdfBase64 = dataBuffer.toString('base64');
 
@@ -299,7 +309,7 @@ COLUMN 4 - D.o.C (Date of Commencement)
 ├─ Contains: Policy start date
 ├─ Data Type: Date (DD/MM/YYYY)
 ├─ Example: "14/02/2025"
-└─ Action: ❌ SKIP - Not needed
+└─ Action: ✅ EXTRACT as "dateOfCommencement" - Used to calculate due date
 
 COLUMN 5 - Pln/Tm (Plan/Term)
 ├─ Contains: Plan code and term
@@ -372,7 +382,7 @@ COLUMN-BY-COLUMN BREAKDOWN:
 Col 1:  "1"          → SKIP (S.No - just row number)
 Col 2:  "508515995"  → EXTRACT as policyNumber (9 digits)
 Col 3:  "CHHABI DAS" → EXTRACT as customerName (full name)
-Col 4:  "14/02/2025" → SKIP (D.o.C - not needed)
+Col 4:  "14/02/2025" → EXTRACT as dateOfCommencement (policy start date)
 Col 5:  "736/25"     → SKIP (Pln/Tm - not needed)
 Col 6:  "Qly"        → EXTRACT as mod (payment mode)
 Col 7:  "05/2025"    → EXTRACT as fup (follow-up date)
@@ -387,6 +397,7 @@ CORRECT JSON OUTPUT:
 {
   "policyNumber": "508515995",   ← Column 2 (PolicyNo)
   "customerName": "CHHABI DAS",  ← Column 3 (Name of Assured)
+  "dateOfCommencement": "14/02/2025", ← Column 4 (D.o.C)
   "mod": "Qly",                  ← Column 6 (Mod)
   "fup": "05/2025",              ← Column 7 (FUP)
   "amount": 8295,                ← Column 12 (TotPrem)
@@ -433,6 +444,7 @@ Return ONLY valid JSON array. No markdown, no code blocks.
   {
     "policyNumber": "508515995",
     "customerName": "CHHABI DAS",
+    "dateOfCommencement": "14/02/2025",
     "mod": "Qly",
     "fup": "05/2025",
     "amount": 8295,
@@ -458,7 +470,7 @@ Extract ALL policy data now:`;
                     message: 'Extracting policy data with AI...',
                 });
 
-                const response = await geminiClient.models.generateContent({
+                const response = await getGeminiClient().models.generateContent({
                     model: 'gemini-2.5-flash',
                     contents: [
                         {
@@ -480,13 +492,11 @@ Extract ALL policy data now:`;
                 // Parse JSON
                 let policies = [];
                 try {
-                    const jsonStr = responseText.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();
-                    policies = JSON.parse(jsonStr);
+                    policies = parseGeminiResponse(responseText);
 
-                    // LOG PARSED JSON FOR DEBUGGING
-                    console.log('=== GEMINI EXTRACTED POLICIES ===');
-                    console.log(JSON.stringify(policies, null, 2));
-                    console.log(`=== Total: ${policies.length} policies ===`);
+                    // LOG COUNT FOR DEBUGGING (no PII)
+                    console.log('=== GEMINI EXTRACTION COMPLETE ===');
+                    console.log(`=== Total: ${policies.length} policies extracted ===`);
                 } catch (parseError) {
                     console.error('Failed to parse JSON:', parseError);
                     console.error('Response:', responseText);
@@ -516,15 +526,49 @@ Extract ALL policy data now:`;
                         const batch = db.batch();
                         chunks[i].forEach(p => {
                             const docRef = db.collection('policies').doc();
+
+                            // Calculate due date: Use day from D.o.C + CURRENT month/year
+                            // Get current month and year first
+                            const now = new Date();
+                            const currentMonth = now.getMonth(); // 0-11
+                            const currentYear = now.getFullYear();
+
+                            // Fallback: Last day of current month (if no D.o.C)
+                            const lastDayOfMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+                            const fallbackDd = String(lastDayOfMonth).padStart(2, '0');
+                            const fallbackMm = String(currentMonth + 1).padStart(2, '0');
+                            let dueDate = `${fallbackDd}/${fallbackMm}/${currentYear}`;
+
+                            if (p.dateOfCommencement) {
+                                try {
+                                    // Extract day from D.o.C (DD/MM/YYYY)
+                                    const docParts = p.dateOfCommencement.split('/');
+                                    const day = parseInt(docParts[0]);
+
+                                    // Create date: day from D.o.C, current month/year
+                                    const date = new Date(currentYear, currentMonth, day);
+
+                                    // Format as DD/MM/YYYY
+                                    const dd = String(date.getDate()).padStart(2, '0');
+                                    const mm = String(date.getMonth() + 1).padStart(2, '0');
+                                    const yyyy = date.getFullYear();
+                                    dueDate = `${dd}/${mm}/${yyyy}`;
+
+                                } catch (err) {
+                                    console.warn('Could not parse D.o.C:', p.dateOfCommencement, err.message);
+                                }
+                            }
+
                             batch.set(docRef, {
                                 id: docRef.id,
                                 policyNumber: p.policyNumber,
                                 customerName: p.customerName,
+                                dateOfCommencement: p.dateOfCommencement || null,
                                 mod: p.mod,
                                 fup: p.fup,
                                 amount: parseFloat(p.amount),
                                 commission: parseFloat(p.commission || 0),
-                                dueDate: '2025-12-31',
+                                dueDate: dueDate,
                                 status: 'pending',
                                 createdAt: Date.now()
                             });

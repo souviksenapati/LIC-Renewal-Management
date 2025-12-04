@@ -28,9 +28,9 @@ export default function AddPolicy() {
             return;
         }
 
-        // Validate date format (basic check)
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
-            Alert.alert('Error', 'Please enter date in YYYY-MM-DD format');
+        // Validate date format DD/MM/YYYY
+        if (!/^\d{2}\/\d{2}\/\d{4}$/.test(dueDate)) {
+            Alert.alert('Error', 'Please enter date in DD/MM/YYYY format');
             return;
         }
 
@@ -108,7 +108,7 @@ export default function AddPolicy() {
                         <Text style={styles.label}>Due Date</Text>
                         <TextInput
                             style={styles.input}
-                            placeholder="YYYY-MM-DD"
+                            placeholder="DD/MM/YYYY"
                             value={dueDate}
                             onChangeText={setDueDate}
                         />

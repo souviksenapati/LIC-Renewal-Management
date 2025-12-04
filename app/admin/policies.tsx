@@ -1,6 +1,6 @@
 import { View, Text, FlatList, TouchableOpacity, TextInput, ActivityIndicator, Image, StyleSheet, Modal, ScrollView, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { collection, query, orderBy, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
 import { Policy } from '../../types';
@@ -35,7 +35,12 @@ export default function AdminPolicies() {
 
     // Filter Logic
     const getFilteredData = () => {
-        const searchLower = filter.toLowerCase();
+        // Sanitize user input to prevent regex injection
+        const sanitizeString = (str: string) => {
+            return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        };
+
+        const searchLower = sanitizeString(filter.toLowerCase());
 
         if (statusFilter === 'pending') {
             if (activeTab === 'action_needed') {
@@ -235,6 +240,17 @@ export default function AdminPolicies() {
                                         <View style={styles.detailHalf}>
                                             <Text style={styles.detailLabel}>Mode</Text>
                                             <Text style={styles.detailValue}>{selectedPolicy.mod || 'N/A'}</Text>
+                                        </View>
+                                    </View>
+
+                                    <View style={styles.detailRowDouble}>
+                                        <View style={styles.detailHalf}>
+                                            <Text style={styles.detailLabel}>D.o.C</Text>
+                                            <Text style={styles.detailValue}>{selectedPolicy.dateOfCommencement || 'N/A'}</Text>
+                                        </View>
+                                        <View style={styles.detailHalf}>
+                                            <Text style={styles.detailLabel}>Due Date</Text>
+                                            <Text style={styles.detailValue}>{selectedPolicy.dueDate}</Text>
                                         </View>
                                     </View>
 
