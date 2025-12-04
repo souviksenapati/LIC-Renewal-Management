@@ -15,7 +15,7 @@ web-build/
 functions/.env
 functions/.env.testing
 functions/.env.production
-firebaseConfig.ts
+#firebaseConfig.ts
 
 # Firebase
 .firebase/
