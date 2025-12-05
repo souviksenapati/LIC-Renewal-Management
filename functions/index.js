@@ -28,8 +28,7 @@ function parseGeminiResponse(responseText) {
 
 // Gemini-Powered Receipt Verification
 exports.verifyReceipt = functions
-    .setTimeoutSeconds(60)
-    .setMemory('512MB')
+    .runWith({ timeoutSeconds: 60, memory: '512MB' })
     .storage.object().onFinalize(async (object) => {
         const filePath = object.name;
 
@@ -244,8 +243,7 @@ If not found:
 
 // PDF Parsing Function using Gemini 2.5 Flash
 exports.processPdfUpload = functions
-    .setTimeoutSeconds(180)
-    .setMemory('512MB')
+    .runWith({ timeoutSeconds: 180, memory: '512MB' })
     .storage.object().onFinalize(async (object) => {
         const filePath = object.name;
 
