@@ -106,21 +106,25 @@ jobs:
           npm ci --production
         timeout-minutes: 5
       
-      - name: Set Firebase project
+      - name: Authenticate with Service Account
         env:
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
         run: |
-          firebase use default --token $FIREBASE_TOKEN
+          echo "$GOOGLE_APPLICATION_CREDENTIALS_JSON" > $HOME/gcloud-key.json
+          export GOOGLE_APPLICATION_CREDENTIALS=$HOME/gcloud-key.json
+          echo "✅ Service account configured"
+      
+      - name: Set Firebase project
+        run: |
+          firebase use default
           echo "✅ Using Firebase project: default"
       
       # Step 1: Deploy Rules First (faster, safer)
       - name: Deploy Firestore & Storage Rules
         if: github.event.inputs.deploy_target == 'all' || github.event.inputs.deploy_target == 'rules' || github.event.inputs.deploy_target == ''
-        env:
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
         run: |
           echo "📋 Deploying security rules..."
-          firebase deploy --only firestore:rules,storage --token $FIREBASE_TOKEN
+          firebase deploy --only firestore:rules,storage
           echo "✅ Rules deployed successfully"
         timeout-minutes: 5
       
@@ -134,22 +138,19 @@ jobs:
       - name: Configure Function Environment Variables
         if: github.event.inputs.deploy_target == 'all' || github.event.inputs.deploy_target == 'functions' || github.event.inputs.deploy_target == ''
         env:
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           echo "🔑 Setting GEMINI_API_KEY in Firebase..."
-          echo -n "$GEMINI_API_KEY" | firebase functions:secrets:set GEMINI_API_KEY --data-file=- --token $FIREBASE_TOKEN --force --project lic-app-874c6
+          echo -n "$GEMINI_API_KEY" | firebase functions:secrets:set GEMINI_API_KEY --data-file=- --force --project lic-app-874c6
           echo "✅ Environment variable configured"
         timeout-minutes: 2
       
       # Step 3: Deploy Functions (slower, requires env vars)
       - name: Deploy Cloud Functions
         if: github.event.inputs.deploy_target == 'all' || github.event.inputs.deploy_target == 'functions' || github.event.inputs.deploy_target == ''
-        env:
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
         run: |
           echo "⚡ Deploying Cloud Functions..."
-          firebase deploy --only functions --token $FIREBASE_TOKEN --force
+          firebase deploy --only functions --force
           echo "✅ Functions deployed successfully"
         timeout-minutes: 20
       
