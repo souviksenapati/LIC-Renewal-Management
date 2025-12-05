@@ -1,0 +1,184 @@
+name: Deploy to Firebase Production
+
+# Triggers: Push to main OR manual trigger
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'functions/**'
+      - 'firestore.rules'
+      - 'storage.rules'
+      - '.github/workflows/firebase-deploy.yml'
+  workflow_dispatch:
+    inputs:
+      deploy_target:
+        description: 'What to deploy'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - functions
+          - rules
+
+env:
+  NODE_VERSION: '20'
+  
+jobs:
+  # Job 1: Validate before deploying
+  validate:
+    name: Validate Code & Config
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: 'functions/package-lock.json'
+      
+      - name: Install Functions dependencies
+        run: |
+          cd functions
+          npm ci
+        timeout-minutes: 5
+      
+      - name: Check JavaScript syntax
+        run: |
+          cd functions
+          node -c index.js
+          echo "✅ Syntax check passed"
+      
+      - name: Validate firebase.json
+        run: |
+          if [ ! -f "firebase.json" ]; then
+            echo "❌ firebase.json not found"
+            exit 1
+          fi
+          echo "✅ firebase.json exists"
+      
+      - name: Validate Firestore rules
+        run: |
+          if [ ! -f "firestore.rules" ]; then
+            echo "❌ firestore.rules not found"
+            exit 1
+          fi
+          echo "✅ Firestore rules exist"
+      
+      - name: Validate Storage rules
+        run: |
+          if [ ! -f "storage.rules" ]; then
+            echo "❌ storage.rules not found"
+            exit 1
+          fi
+          echo "✅ Storage rules exist"
+  
+  # Job 2: Deploy (runs after validation)
+  deploy:
+    name: Deploy to Firebase
+    runs-on: ubuntu-latest
+    needs: validate
+    timeout-minutes: 30
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: 'functions/package-lock.json'
+      
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools@latest
+      
+      - name: Install Functions dependencies
+        run: |
+          cd functions
+          npm ci --production
+        timeout-minutes: 5
+      
+      - name: Set Firebase project
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: |
+          firebase use default --token $FIREBASE_TOKEN
+          echo "✅ Using Firebase project: default"
+      
+      # Step 1: Deploy Rules First (faster, safer)
+      - name: Deploy Firestore & Storage Rules
+        if: github.event.inputs.deploy_target == 'all' || github.event.inputs.deploy_target == 'rules' || github.event.inputs.deploy_target == ''
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: |
+          echo "📋 Deploying security rules..."
+          firebase deploy --only firestore:rules,storage --token $FIREBASE_TOKEN
+          echo "✅ Rules deployed successfully"
+        timeout-minutes: 5
+      
+      - name: Wait after rules deployment
+        if: github.event.inputs.deploy_target == 'all' || github.event.inputs.deploy_target == ''
+        run: |
+          echo "⏳ Waiting 10s for rules to propagate..."
+          sleep 10
+      
+      # Step 2.5: Set GEMINI_API_KEY in Firebase (if provided)
+      - name: Configure Function Environment Variables
+        if: (github.event.inputs.deploy_target == 'all' || github.event.inputs.deploy_target == 'functions' || github.event.inputs.deploy_target == '') && secrets.GEMINI_API_KEY != ''
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          echo "🔑 Setting GEMINI_API_KEY in Firebase..."
+          echo -n "$GEMINI_API_KEY" | firebase functions:secrets:set GEMINI_API_KEY --data-file=- --token $FIREBASE_TOKEN --force
+          echo "✅ Environment variable configured"
+        timeout-minutes: 2
+      
+      # Step 3: Deploy Functions (slower, requires env vars)
+      - name: Deploy Cloud Functions
+        if: github.event.inputs.deploy_target == 'all' || github.event.inputs.deploy_target == 'functions' || github.event.inputs.deploy_target == ''
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: |
+          echo "⚡ Deploying Cloud Functions..."
+          firebase deploy --only functions --token $FIREBASE_TOKEN --force
+          echo "✅ Functions deployed successfully"
+        timeout-minutes: 20
+      
+      - name: Deployment Summary
+        if: success()
+        run: |
+          echo "🎉 Deployment completed successfully!"
+          echo "📅 Deployed at: $(date)"
+          echo "🔗 Firebase Console: https://console.firebase.google.com/project/lic-app-874c6"
+      
+      - name: Deployment Failed
+        if: failure()
+        run: |
+          echo "❌ Deployment failed!"
+          echo "Check logs above for details"
+          exit 1
+
+  # Job 3: Notify (optional, runs after deploy)
+  notify:
+    name: Post-Deploy Notifications
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: always()
+    
+    steps:
+      - name: Deployment Status
+        run: |
+          if [ "${{ needs.deploy.result }}" == "success" ]; then
+            echo "✅ Deployment successful"
+          else
+            echo "❌ Deployment failed"
+          fi
