@@ -132,13 +132,13 @@ jobs:
       
       # Step 2.5: Set GEMINI_API_KEY in Firebase (if provided)
       - name: Configure Function Environment Variables
-        if: (github.event.inputs.deploy_target == 'all' || github.event.inputs.deploy_target == 'functions' || github.event.inputs.deploy_target == '') && secrets.GEMINI_API_KEY != ''
+        if: github.event.inputs.deploy_target == 'all' || github.event.inputs.deploy_target == 'functions' || github.event.inputs.deploy_target == ''
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           echo "🔑 Setting GEMINI_API_KEY in Firebase..."
-          echo -n "$GEMINI_API_KEY" | firebase functions:secrets:set GEMINI_API_KEY --data-file=- --token $FIREBASE_TOKEN --force
+          echo -n "$GEMINI_API_KEY" | firebase functions:secrets:set GEMINI_API_KEY --data-file=- --token $FIREBASE_TOKEN --force --project lic-app-874c6
           echo "✅ Environment variable configured"
         timeout-minutes: 2
       
