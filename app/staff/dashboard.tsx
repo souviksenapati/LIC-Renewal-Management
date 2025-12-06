@@ -93,8 +93,9 @@ export default function StaffDashboard() {
         try {
             const response = await fetch(uri);
             const blob = await response.blob();
-            const timestamp = Date.now();
-            const filename = `receipts/${policyId}_${timestamp}.jpg`;
+
+            // FIXED filename per policy - GCS versioning handles old versions automatically
+            const filename = `receipts/${policyId}.jpg`;
             const storageRef = ref(storage, filename);
 
             await uploadBytes(storageRef, blob);
@@ -103,12 +104,11 @@ export default function StaffDashboard() {
             await updateDoc(doc(db, 'policies', policyId), {
                 receiptUrl: downloadURL,
                 uploadedBy: user?.uid,
-                uploadedAt: timestamp,
+                uploadedAt: Date.now(),
             });
 
-            // Start verification tracking
-            const uploadId = `${policyId}_${timestamp}`;
-            setUploadId(uploadId);
+            // Use policyId as uploadId for tracking (matches backend processing log)
+            setUploadId(policyId);
             setVerificationInProgress(true);
             setUploading(false);
         } catch (error) {

@@ -35,9 +35,9 @@ exports.verifyReceipt = functions
         // Only process receipts
         if (!filePath.startsWith('receipts/')) return;
 
-        // Extract policyId from filename: receipts/{policyId}_{timestamp}.jpg
-        const fileName = path.basename(filePath);
-        const policyId = fileName.split('_')[0];
+        // Extract policyId from filename: receipts/{policyId}.jpg (fixed filename format)
+        const fileName = path.basename(filePath, '.jpg'); // Remove extension
+        const policyId = fileName; // Filename IS the policyId
 
         if (!policyId) {
             console.error('Could not extract policy ID from filename:', fileName);
@@ -46,16 +46,16 @@ exports.verifyReceipt = functions
 
         console.log(`Processing receipt for policy: ${policyId}`);
 
-        // Create processing log
-        const uploadId = fileName.replace(/\.(jpg|jpeg|png)$/i, '');
-        const logRef = db.collection('processing_logs').doc(uploadId);
+        // Use policyId as processing log ID for consistency with frontend
+        // (Frontend and backend now use same ID since filename is fixed)
+        const logRef = db.collection('processing_logs').doc(policyId);
 
         await logRef.set({
             type: 'receipt',
             policyId: policyId,
             stage: 'uploading',
             message: 'Receipt uploaded',
-            fileName: fileName,
+            fileName: `${policyId}.jpg`, // Fixed filename format
             startedAt: Date.now(),
             status: 'in_progress'
         });
@@ -80,41 +80,8 @@ exports.verifyReceipt = functions
             const expectedPolicyNumber = policyData.policyNumber;
             const expectedCustomerName = policyData.customerName;
 
-            // ✅ AUTO-DELETE OLD RECEIPT (if re-upload)
-            const existingReceiptUrl = policyData.receiptUrl;
-
-            console.log(`📋 Checking for existing receipt. URL: ${existingReceiptUrl ? 'EXISTS' : 'NONE'}`);
-
-            if (existingReceiptUrl) {
-                console.log(`🔍 Existing receipt URL: ${existingReceiptUrl}`);
-                try {
-                    // Extract old filename from URL
-                    // URL format: https://firebasestorage.googleapis.com/.../receipts%2FpolicyId_oldtimestamp.jpg?...
-                    const match = existingReceiptUrl.match(/receipts%2F([^?]+)/);
-
-                    console.log(`🔍 Regex match result: ${match ? 'FOUND' : 'NOT FOUND'}`);
-
-                    if (match) {
-                        const oldFilename = `receipts/${decodeURIComponent(match[1])}`;
-
-                        console.log(`📂 Old filename: ${oldFilename}`);
-                        console.log(`📂 New filename: ${filePath}`);
-                        console.log(`🔄 Are they different? ${oldFilename !== filePath}`);
-
-                        // Only delete if it's a DIFFERENT file (not same upload)
-                        if (oldFilename !== filePath) {
-                            console.log(`🗑️ Attempting to delete old receipt: ${oldFilename}`);
-                            await admin.storage().bucket(object.bucket).file(oldFilename).delete();
-                            console.log(`✅ Auto-deleted old receipt on re-upload: ${oldFilename}`);
-                        } else {
-                            console.log(`⏭️ Skipping deletion - same file`);
-                        }
-                    }
-                } catch (deleteError) {
-                    // Continue processing even if deletion fails (file might not exist)
-                    console.error('❌ Receipt deletion failed:', deleteError.message);
-                }
-            }
+            // GCS Object Versioning handles old receipts automatically
+            // No manual deletion needed - lifecycle rule deletes noncurrent versions after 7 days
 
             console.log(`Expected policy ID: ${policyId}`);
 
@@ -150,7 +117,7 @@ If not found:
                 console.log('Calling Gemini for receipt analysis...');
 
                 const response = await getGeminiClient().models.generateContent({
-                    model: 'gemini-2.0-flash-exp',
+                    model: 'gemini-2.5-flash',
                     contents: [{
                         parts: [
                             {
