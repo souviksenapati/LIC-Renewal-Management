@@ -80,6 +80,42 @@ exports.verifyReceipt = functions
             const expectedPolicyNumber = policyData.policyNumber;
             const expectedCustomerName = policyData.customerName;
 
+            // ✅ AUTO-DELETE OLD RECEIPT (if re-upload)
+            const existingReceiptUrl = policyData.receiptUrl;
+
+            console.log(`📋 Checking for existing receipt. URL: ${existingReceiptUrl ? 'EXISTS' : 'NONE'}`);
+
+            if (existingReceiptUrl) {
+                console.log(`🔍 Existing receipt URL: ${existingReceiptUrl}`);
+                try {
+                    // Extract old filename from URL
+                    // URL format: https://firebasestorage.googleapis.com/.../receipts%2FpolicyId_oldtimestamp.jpg?...
+                    const match = existingReceiptUrl.match(/receipts%2F([^?]+)/);
+
+                    console.log(`🔍 Regex match result: ${match ? 'FOUND' : 'NOT FOUND'}`);
+
+                    if (match) {
+                        const oldFilename = `receipts/${decodeURIComponent(match[1])}`;
+
+                        console.log(`📂 Old filename: ${oldFilename}`);
+                        console.log(`📂 New filename: ${filePath}`);
+                        console.log(`🔄 Are they different? ${oldFilename !== filePath}`);
+
+                        // Only delete if it's a DIFFERENT file (not same upload)
+                        if (oldFilename !== filePath) {
+                            console.log(`🗑️ Attempting to delete old receipt: ${oldFilename}`);
+                            await admin.storage().bucket(object.bucket).file(oldFilename).delete();
+                            console.log(`✅ Auto-deleted old receipt on re-upload: ${oldFilename}`);
+                        } else {
+                            console.log(`⏭️ Skipping deletion - same file`);
+                        }
+                    }
+                } catch (deleteError) {
+                    // Continue processing even if deletion fails (file might not exist)
+                    console.error('❌ Receipt deletion failed:', deleteError.message);
+                }
+            }
+
             console.log(`Expected policy ID: ${policyId}`);
 
             // Download image to temp file
