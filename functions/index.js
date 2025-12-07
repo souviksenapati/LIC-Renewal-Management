@@ -629,3 +629,59 @@ Extract ALL policy data now:`;
             }).catch(err => console.error('Failed to update error status:', err));
         }
     });
+
+// ========================================
+// POLICY DELETION - AUTO-CLEANUP RECEIPTS
+// ========================================
+
+/**
+ * Firestore Trigger: Auto-delete receipts when policy is deleted
+ * Fires when ANY policy is deleted (admin UI, console, etc.)
+ * Deletes ALL versions of the receipt + processing log
+ */
+exports.onPolicyDelete = functions.firestore
+    .document('policies/{policyId}')
+    .onDelete(async (snap, context) => {
+        const policyId = context.params.policyId;
+        const policyData = snap.data();
+
+        console.log(`🗑️  Policy deleted: ${policyId}, starting cleanup...`);
+
+        // Delete ALL versions of receipt from Storage (if exists)
+        if (policyData.receiptUrl) {
+            const bucket = admin.storage().bucket();
+            const filePath = `receipts/${policyId}.jpg`;
+
+            try {
+                // List ALL versions of this file (live + noncurrent)
+                const [files] = await bucket.getFiles({
+                    prefix: filePath,
+                    versions: true
+                });
+
+                // Delete each version
+                const deletePromises = files.map(fileVersion =>
+                    fileVersion.delete({ ignoreNotFound: true })
+                );
+                await Promise.all(deletePromises);
+
+                console.log(`✅ Deleted ${files.length} version(s) of receipt: ${filePath}`);
+            } catch (error) {
+                // Log error but don't fail - file might not exist or already deleted
+                console.error(`⚠️  Failed to delete receipt ${filePath}:`, error.message);
+            }
+        } else {
+            console.log(`ℹ️  No receipt URL found for policy: ${policyId}`);
+        }
+
+        // Delete processing log (if exists)
+        try {
+            await db.collection('processing_logs').doc(policyId).delete();
+            console.log(`✅ Deleted processing log: ${policyId}`);
+        } catch (error) {
+            console.error(`⚠️  Failed to delete processing log:`, error.message);
+        }
+
+        console.log(`✅ Cleanup complete for policy: ${policyId}`);
+        return null;
+    });
