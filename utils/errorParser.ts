@@ -114,6 +114,37 @@ export const parseError = (error: any, context: string = 'general'): UserError =
         }
     }
 
+    // Gemini API errors (from Cloud Functions)
+    if (code === 503 || message.includes('overloaded') || message.includes('UNAVAILABLE')) {
+        return {
+            title: 'AI service busy',
+            message: 'Please try again in a minute',
+            action: 'Retry',
+            icon: '⚠️',
+            severity: 'warning',
+        };
+    }
+
+    if (code === 429 || message.includes('quota') || message.includes('rate limit')) {
+        return {
+            title: 'Too many requests',
+            message: 'Wait a moment and try again',
+            action: 'Retry',
+            icon: '⚠️',
+            severity: 'warning',
+        };
+    }
+
+    if (message.includes('model') || message.includes('Gemini')) {
+        return {
+            title: 'Processing error',
+            message: 'AI service unavailable. Try again',
+            action: 'Retry',
+            icon: '❌',
+            severity: 'error',
+        };
+    }
+
     // Firestore errors
     if (code.includes('permission-denied') || code === 'firestore/permission-denied') {
         return {
