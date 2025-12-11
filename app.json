@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "LIC Renewal",
-    "slug": "LIC_APP",
+    "slug": "lic-app",
     "scheme": "licrenewal",
     "version": "1.0.1",
     "orientation": "portrait",
@@ -19,10 +19,6 @@
     "android": {
       "package": "com.souviksenapati.licapp",
       "icon": "./assets/icon.png",
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/icon.png",
-        "backgroundColor": "#ffffff"
-      },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
@@ -35,7 +31,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "c72f6934-ee40-4643-97ef-154ee4f74e2c"
+        "projectId": "a4b8b6ef-79a1-4448-bad8-450c63d169b4"
       }
     }
   }
