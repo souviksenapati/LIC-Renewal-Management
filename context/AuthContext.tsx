@@ -3,6 +3,7 @@ import { onAuthStateChanged, User, signOut as firebaseSignOut, signInWithEmailAn
 import { auth, db } from '../firebaseConfig';
 import { doc, getDoc } from 'firebase/firestore';
 import { useRouter, useSegments } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type UserRole = 'admin' | 'staff' | null;
 
@@ -37,21 +38,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
             setUser(currentUser);
             if (currentUser) {
-                // Fetch user role from Firestore
+                // Try to fetch user role from Firestore
                 try {
                     const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
                     if (userDoc.exists()) {
-                        setRole(userDoc.data().role as UserRole);
+                        const fetchedRole = userDoc.data().role as UserRole;
+                        setRole(fetchedRole);
+                        // Cache the role for offline use
+                        if (fetchedRole) {
+                            await AsyncStorage.setItem('userRole', fetchedRole);
+                        }
                     } else {
                         console.error('User document not found');
                         setRole(null);
                     }
                 } catch (error) {
                     console.error('Error fetching user role:', error);
-                    setRole(null);
+                    // If offline, try to use cached role
+                    try {
+                        const cachedRole = await AsyncStorage.getItem('userRole');
+                        if (cachedRole) {
+                            console.log('Using cached role (offline mode)');
+                            setRole(cachedRole as UserRole);
+                        } else {
+                            setRole(null);
+                        }
+                    } catch (cacheError) {
+                        console.error('Error reading cached role:', cacheError);
+                        setRole(null);
+                    }
                 }
             } else {
                 setRole(null);
+                // Clear cached role on logout
+                await AsyncStorage.removeItem('userRole');
             }
             setIsLoading(false);
         });
@@ -59,17 +79,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return unsubscribe;
     }, []);
 
-    // Protected Routes Logic
+    // Protected Routes Logic - Auto-navigate to dashboard or login
     useEffect(() => {
+        // Wait until auth state is loaded
         if (isLoading) return;
 
         const inAuthGroup = segments[0] === 'admin' || segments[0] === 'staff';
 
         if (!user && inAuthGroup) {
-            // Redirect to home if not logged in and trying to access protected routes
+            // Not logged in and trying to access protected routes → redirect to login
             router.replace('/');
+        } else if (user && role && !inAuthGroup) {
+            // Logged in but on login screen → redirect to appropriate dashboard
+            if (role === 'admin') {
+                router.replace('/admin/dashboard');
+            } else if (role === 'staff') {
+                router.replace('/staff/dashboard');
+            }
         }
-    }, [user, role, segments, isLoading, router]);
+    }, [user, role, segments, isLoading]);
 
     const signIn = async (email: string, pass: string, expectedRole: UserRole) => {
         try {

@@ -4,6 +4,8 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useNetworkStatus } from '../hooks/useNetworkStatus';
+import { parseError } from '../utils/errorParser';
 
 export default function LoginScreen() {
     const [activeTab, setActiveTab] = useState<'staff' | 'admin'>('staff');
@@ -12,18 +14,25 @@ export default function LoginScreen() {
     const [loading, setLoading] = useState(false);
     const { signIn } = useAuth();
     const router = useRouter();
+    const { isOnline } = useNetworkStatus();
 
     const handleLogin = async () => {
+        // Check network first
+        if (!isOnline) {
+            Alert.alert('No connection', 'Login requires internet');
+            return;
+        }
+
         // Email validation
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!email || !emailRegex.test(email)) {
-            Alert.alert('Invalid Email', 'Please enter a valid email address');
+            Alert.alert('Invalid email', 'Enter a valid email address');
             return;
         }
 
         // Password validation
         if (!password || password.length < 6) {
-            Alert.alert('Invalid Password', 'Password must be at least 6 characters long');
+            Alert.alert('Invalid password', 'Minimum 6 characters');
             return;
         }
 
@@ -36,7 +45,9 @@ export default function LoginScreen() {
                 router.replace('/staff/dashboard');
             }
         } catch (error: any) {
-            Alert.alert('Login Failed', error.message);
+            // User-friendly error message
+            const userError = parseError(error, 'login');
+            Alert.alert(userError.title, userError.message);
         } finally {
             setLoading(false);
         }

@@ -48,3 +48,7 @@ build/
 # Temporary
 *.tmp
 .cache/
+
+
+#android
+android

@@ -9,6 +9,8 @@ import { StatusBar } from 'expo-status-bar';
 import { useAuth } from '../../context/AuthContext';
 import * as ImagePicker from 'expo-image-picker';
 import ReceiptVerificationProgress from '../../components/ReceiptVerificationProgress';
+import { useNetworkStatus } from '../../hooks/useNetworkStatus';
+import { parseError } from '../../utils/errorParser';
 
 export default function StaffDashboard() {
     const { signOut, user } = useAuth();
@@ -26,6 +28,7 @@ export default function StaffDashboard() {
     // Store errors per policy ID: { [policyId]: "Error message" }
     const [failedPolicies, setFailedPolicies] = useState<Record<string, string>>({});
     const [successMessage, setSuccessMessage] = useState('');
+    const { isOnline } = useNetworkStatus();
 
     useEffect(() => {
         const q = query(collection(db, 'policies'));
@@ -66,6 +69,12 @@ export default function StaffDashboard() {
 
     const pickImage = async () => {
         if (!selectedPolicy) return;
+
+        // Check network before allowing upload
+        if (!isOnline) {
+            Alert.alert('No connection', 'Connect to upload receipts');
+            return;
+        }
 
         const result = await ImagePicker.launchCameraAsync({
             mediaTypes: ['images'],
@@ -113,7 +122,9 @@ export default function StaffDashboard() {
             setUploading(false);
         } catch (error) {
             console.error("Upload error:", error);
-            Alert.alert('Error', 'Failed to upload receipt');
+            // User-friendly error message
+            const userError = parseError(error, 'upload');
+            Alert.alert(userError.title, userError.message);
             setUploading(false);
         }
     };
@@ -179,7 +190,10 @@ export default function StaffDashboard() {
                 <Text style={styles.headerSubtitle}>Agent: {user?.email}</Text>
             </LinearGradient>
 
-            <ScrollView style={styles.scrollView}>
+            <ScrollView
+                style={styles.scrollView}
+                contentContainerStyle={{ paddingBottom: 100 }}
+            >
                 {/* Pending Section */}
                 <View style={styles.section}>
                     <TouchableOpacity

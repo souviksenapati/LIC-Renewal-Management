@@ -9,6 +9,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback } from 'react';
 import ProcessingStatusModal from '../../components/ProcessingStatusModal';
+import { useNetworkStatus } from '../../hooks/useNetworkStatus';
+import { parseError } from '../../utils/errorParser';
 
 const PROCESSING_STATE_KEY = 'pdf_processing_state';
 
@@ -18,6 +20,7 @@ export default function UploadPDF() {
     const [uploadId, setUploadId] = useState('');
     const [minimized, setMinimized] = useState(false);
     const router = useRouter();
+    const { isOnline } = useNetworkStatus();
 
     // Load processing state when screen gains focus
     useFocusEffect(
@@ -69,6 +72,12 @@ export default function UploadPDF() {
     };
 
     const pickDocument = async () => {
+        // Check network before allowing upload
+        if (!isOnline) {
+            Alert.alert('No connection', 'Connect to upload PDFs');
+            return;
+        }
+
         try {
             const result = await DocumentPicker.getDocumentAsync({
                 type: 'application/pdf',
@@ -84,6 +93,8 @@ export default function UploadPDF() {
 
         } catch (err) {
             console.error("Error picking document:", err);
+            const userError = parseError(err, 'upload');
+            Alert.alert(userError.title, userError.message);
         }
     };
 
@@ -106,7 +117,9 @@ export default function UploadPDF() {
 
         } catch (error) {
             console.error("Upload error:", error);
-            Alert.alert('Error', 'Failed to upload PDF');
+            // User-friendly error message
+            const userError = parseError(error, 'upload');
+            Alert.alert(userError.title, userError.message);
             setUploading(false);
         }
     };

@@ -46,4 +46,10 @@ const auth = initializeAuth(app, {
 const db = getFirestore(app);
 const storage = getStorage(app);
 
+// Enable offline persistence for Firestore (React Native)
+// Allows viewing cached policies when offline
+// Note: enableIndexedDbPersistence is for web only
+// React Native has offline support enabled by default
+console.log('📦 Firestore offline persistence enabled by default for React Native');
+
 export { auth, db, storage };
