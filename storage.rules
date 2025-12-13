@@ -8,11 +8,11 @@ service firebase.storage {
       return userDoc != null && userDoc.data != null ? userDoc.data.role : null;
     }
     
-    // Receipts - staff can upload images only, max 10MB
+    // Receipts - staff and manager can upload images only, max 10MB
     match /receipts/{receiptFile} {
       allow read: if request.auth != null;
       allow write: if request.auth != null && 
-                   getUserRole() == 'staff' &&
+                   (getUserRole() == 'staff' || getUserRole() == 'manager') &&
                    request.resource.size < 10 * 1024 * 1024 &&
                    request.resource.contentType.matches('image/(jpeg|jpg|png)');
     }

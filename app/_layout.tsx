@@ -27,6 +27,13 @@ function RootLayoutNav() {
                 <Stack.Screen name="admin/policies" options={{ headerShown: false }} />
                 <Stack.Screen name="admin/add-policy" options={{ headerShown: false }} />
                 <Stack.Screen name="admin/upload-pdf" options={{ headerShown: false }} />
+                <Stack.Screen name="manager/dashboard" options={{ headerShown: false }} />
+                <Stack.Screen name="manager/current-policies" options={{ headerShown: false }} />
+                <Stack.Screen name="manager/add-all-policy" options={{ headerShown: false }} />
+                <Stack.Screen name="manager/all-policies" options={{ headerShown: false }} />
+                <Stack.Screen name="admin/add-all-policy" options={{ headerShown: false }} />
+                <Stack.Screen name="admin/all-policies" options={{ headerShown: false }} />
+                <Stack.Screen name="admin/edit-all-policy" options={{ headerShown: false }} />
                 <Stack.Screen name="staff/dashboard" options={{ headerShown: false }} />
             </Stack>
         </>

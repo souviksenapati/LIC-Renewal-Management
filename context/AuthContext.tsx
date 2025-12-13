@@ -5,7 +5,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { useRouter, useSegments } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-type UserRole = 'admin' | 'staff' | null;
+type UserRole = 'admin' | 'staff' | 'manager' | null;
 
 interface AuthContextType {
     user: User | null;
@@ -84,7 +84,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Wait until auth state is loaded
         if (isLoading) return;
 
-        const inAuthGroup = segments[0] === 'admin' || segments[0] === 'staff';
+        const inAuthGroup = segments[0] === 'admin' || segments[0] === 'staff' || segments[0] === 'manager';
 
         if (!user && inAuthGroup) {
             // Not logged in and trying to access protected routes → redirect to login
@@ -93,6 +93,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             // Logged in but on login screen → redirect to appropriate dashboard
             if (role === 'admin') {
                 router.replace('/admin/dashboard');
+            } else if (role === 'manager') {
+                router.replace('/manager/dashboard');
             } else if (role === 'staff') {
                 router.replace('/staff/dashboard');
             }

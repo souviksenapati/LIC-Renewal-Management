@@ -1,11 +1,12 @@
-import { View, Text, FlatList, TextInput, TouchableOpacity, Alert, ActivityIndicator, Modal, ScrollView, Image, StyleSheet } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, TextInput, ActivityIndicator, Modal, ScrollView, Image, StyleSheet, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { collection, query, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../../firebaseConfig';
 import { Policy } from '../../types';
 import { StatusBar } from 'expo-status-bar';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
 import * as ImagePicker from 'expo-image-picker';
 import ReceiptVerificationProgress from '../../components/ReceiptVerificationProgress';
@@ -13,26 +14,20 @@ import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { parseError } from '../../utils/errorParser';
 import PolicyFilterPanel, { SectionFilterState } from '../../components/PolicyFilterPanel';
 
-export default function StaffDashboard() {
-    const { signOut, user } = useAuth();
+export default function ManagerCurrentPolicies() {
     const [policies, setPolicies] = useState<Policy[]>([]);
     const [loading, setLoading] = useState(true);
-    const [uploading, setUploading] = useState(false);
-
     const [selectedPolicy, setSelectedPolicy] = useState<Policy | null>(null);
     const [modalVisible, setModalVisible] = useState(false);
+    const [uploading, setUploading] = useState(false);
     const [verificationInProgress, setVerificationInProgress] = useState(false);
     const [uploadId, setUploadId] = useState('');
 
     const [failedPolicies, setFailedPolicies] = useState<Record<string, string>>({});
     const [successMessage, setSuccessMessage] = useState('');
-    const { isOnline } = useNetworkStatus();
 
-    // NEW: Global search and status filter
+    // Filter state management
     const [globalSearch, setGlobalSearch] = useState('');
-    const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'verified'>('pending');
-
-    // NEW: Separate filters for each section
     const [pendingFilters, setPendingFilters] = useState<SectionFilterState>({
         searchQuery: '',
         dateFrom: null,
@@ -41,7 +36,6 @@ export default function StaffDashboard() {
         amountMax: 100000,
         sortBy: 'newest',
     });
-
     const [completedFilters, setCompletedFilters] = useState<SectionFilterState>({
         searchQuery: '',
         dateFrom: null,
@@ -50,21 +44,25 @@ export default function StaffDashboard() {
         amountMax: 100000,
         sortBy: 'newest',
     });
-
     const [activeFilterSection, setActiveFilterSection] = useState<'pending' | 'completed' | null>(null);
+
+    const router = useRouter();
+    const params = useLocalSearchParams();
+    const statusFilter = params.status as 'pending' | 'verified' | undefined;
+    const { user } = useAuth();
+    const { isOnline } = useNetworkStatus();
 
     useEffect(() => {
         const q = query(collection(db, 'policies'));
         const unsubscribe = onSnapshot(q, (snapshot) => {
-            const policiesData: Policy[] = [];
-            snapshot.forEach((doc) => {
-                policiesData.push({ id: doc.id, ...doc.data() } as Policy);
-            });
-            setPolicies(policiesData);
+            const policyData = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            })) as Policy[];
+            setPolicies(policyData);
             setLoading(false);
         });
-
-        return () => unsubscribe();
+        return unsubscribe;
     }, []);
 
     // Sync selectedPolicy with real-time updates
@@ -90,9 +88,26 @@ export default function StaffDashboard() {
         return date.getTime();
     };
 
-    // Filter and sort policies
-    const getFilteredPolicies = (status: 'pending' | 'verified', filters: SectionFilterState) => {
-        let filtered = policies.filter(p => p.status === status);
+    // Count active filters
+    const getActiveFilterCount = (filters: SectionFilterState) => {
+        let count = 0;
+        if (filters.dateFrom || filters.dateTo) count++;
+        if (filters.amountMax < 100000) count++;
+        if (filters.sortBy !== 'newest') count++;
+        return count;
+    };
+
+    // Filter and sort policies with advanced filters
+    const getFilteredPolicies = () => {
+        let filtered = policies;
+
+        // Filter by status from URL
+        if (statusFilter) {
+            filtered = filtered.filter(p => p.status === statusFilter);
+        }
+
+        // Get appropriate filters based on current status
+        const currentFilters = statusFilter === 'verified' ? completedFilters : pendingFilters;
 
         // Apply global search with null safety
         if (globalSearch.trim()) {
@@ -104,8 +119,8 @@ export default function StaffDashboard() {
         }
 
         // Apply section-specific search with null safety
-        if (filters.searchQuery.trim()) {
-            const query = filters.searchQuery.toLowerCase().trim();
+        if (currentFilters.searchQuery.trim()) {
+            const query = currentFilters.searchQuery.toLowerCase().trim();
             filtered = filtered.filter(p =>
                 (p.policyNumber?.toLowerCase().includes(query) || false) ||
                 (p.customerName?.toLowerCase().includes(query) || false)
@@ -113,8 +128,8 @@ export default function StaffDashboard() {
         }
 
         // Filter by date range
-        if (filters.dateFrom) {
-            const fromDate = parseDMY(filters.dateFrom);
+        if (currentFilters.dateFrom) {
+            const fromDate = parseDMY(currentFilters.dateFrom);
             if (fromDate > 0) {
                 filtered = filtered.filter(p => {
                     const policyDate = parseDMY(p.dueDate);
@@ -122,8 +137,8 @@ export default function StaffDashboard() {
                 });
             }
         }
-        if (filters.dateTo) {
-            const toDate = parseDMY(filters.dateTo);
+        if (currentFilters.dateTo) {
+            const toDate = parseDMY(currentFilters.dateTo);
             if (toDate > 0) {
                 filtered = filtered.filter(p => {
                     const policyDate = parseDMY(p.dueDate);
@@ -135,11 +150,11 @@ export default function StaffDashboard() {
         // Filter by amount range with null safety
         filtered = filtered.filter(p => {
             const amount = p.amount ?? 0;
-            return amount >= filters.amountMin && amount <= filters.amountMax;
+            return amount >= currentFilters.amountMin && amount <= currentFilters.amountMax;
         });
 
         // Sort with null safety
-        switch (filters.sortBy) {
+        switch (currentFilters.sortBy) {
             case 'oldest':
                 filtered.sort((a, b) => parseDMY(a.dueDate) - parseDMY(b.dueDate));
                 break;
@@ -157,59 +172,34 @@ export default function StaffDashboard() {
         return filtered;
     };
 
-    const pendingPolicies = useMemo(() => getFilteredPolicies('pending', pendingFilters), [policies, globalSearch, pendingFilters]);
-    const completedPolicies = useMemo(() => getFilteredPolicies('verified', completedFilters), [policies, globalSearch, completedFilters]);
-
-    // Get policies to display based on status filter
-    const getDisplayPolicies = () => {
-        if (statusFilter === 'pending') return pendingPolicies;
-        if (statusFilter === 'verified') return completedPolicies;
-        // Show all = pending + completed
-        return [...pendingPolicies, ...completedPolicies];
-    };
-
-    // Count active filters
-    const getActiveFilterCount = (filters: SectionFilterState) => {
-        let count = 0;
-        if (filters.dateFrom || filters.dateTo) count++;
-        if (filters.amountMax < 100000) count++;
-        if (filters.sortBy !== 'newest') count++;
-        return count;
-    };
-
-    // Render policy item in FlatList
-    const renderPolicyItem = ({ item }: { item: Policy }) => (
-        <TouchableOpacity
-            style={styles.policyItem}
-            onPress={() => openPolicyDetails(item)}
-            activeOpacity={0.7}
-        >
-            <View style={styles.policyRow}>
-                <View style={styles.policyLeft}>
-                    <Text style={styles.policyIcon}>
-                        {item.status === 'verified' ? '✅' : '📄'}
-                    </Text>
-                    <View style={styles.policyInfo}>
-                        <Text style={styles.policyName} numberOfLines={1}>
-                            {item.customerName}
-                        </Text>
-                        <Text style={styles.policyNumber}>#{item.policyNumber}</Text>
-                    </View>
-                </View>
-                <View style={styles.policyRight}>
-                    <Text style={styles.policyAmount}>₹{item.amount.toLocaleString()}</Text>
-                    <Text style={styles.viewArrow}>›</Text>
-                </View>
-            </View>
-        </TouchableOpacity>
-    );
-
     const openPolicyDetails = (policy: Policy) => {
         setSelectedPolicy(policy);
         setModalVisible(true);
         setVerificationInProgress(false);
         setSuccessMessage('');
         setUploadId('');
+    };
+
+    const handleVerificationComplete = (success: boolean, message?: string) => {
+        setVerificationInProgress(false);
+
+        if (!selectedPolicy) return;
+
+        if (success) {
+            setSelectedPolicy(prev => prev ? { ...prev, status: 'verified' } : null);
+            setFailedPolicies(prev => {
+                const newErrors = { ...prev };
+                delete newErrors[selectedPolicy.id];
+                return newErrors;
+            });
+            setSuccessMessage('✅ Receipt verified successfully!');
+            setTimeout(() => setSuccessMessage(''), 2000);
+        } else {
+            setFailedPolicies(prev => ({
+                ...prev,
+                [selectedPolicy.id]: message || 'Verification failed'
+            }));
+        }
     };
 
     const pickImage = async () => {
@@ -269,66 +259,37 @@ export default function StaffDashboard() {
         }
     };
 
-    const handleVerificationComplete = (success: boolean, message?: string) => {
-        setVerificationInProgress(false);
 
-        if (!selectedPolicy) return;
+    const filteredPolicies = getFilteredPolicies();
 
-        if (success) {
-            setSelectedPolicy(prev => prev ? { ...prev, status: 'verified' } : null);
-            setFailedPolicies(prev => {
-                const newErrors = { ...prev };
-                delete newErrors[selectedPolicy.id];
-                return newErrors;
-            });
-            setSuccessMessage('✅ Receipt verified successfully!');
-            setTimeout(() => setSuccessMessage(''), 2000);
-        } else {
-            setFailedPolicies(prev => ({
-                ...prev,
-                [selectedPolicy.id]: message || 'Verification failed'
-            }));
-        }
+    const getHeaderTitle = () => {
+        if (statusFilter === 'pending') return 'Pending Policies';
+        if (statusFilter === 'verified') return 'Verified Policies';
+        return 'Current Month Policies';
     };
-
-    if (loading) {
-        return (
-            <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#059669" />
-                <Text style={styles.loadingText}>Loading policies...</Text>
-            </View>
-        );
-    }
-
-    const showPendingCard = statusFilter === 'all' || statusFilter === 'pending';
-    const showCompletedCard = statusFilter === 'all' || statusFilter === 'verified';
 
     return (
         <View style={styles.container}>
             <StatusBar style="light" />
-
-            {/* Header */}
             <LinearGradient
-                colors={['#064e3b', '#065f46', '#059669'] as const}
+                colors={['#92400e', '#b45309', '#f59e0b']}
                 style={styles.header}
             >
                 <View style={styles.headerTop}>
-                    <Text style={styles.headerTitle}>Staff Portal</Text>
-                    <TouchableOpacity onPress={signOut} style={styles.logoutButton}>
-                        <Text style={styles.logoutText}>Logout</Text>
+                    <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+                        <Text style={styles.backButtonText}>←</Text>
                     </TouchableOpacity>
+                    <Text style={styles.headerTitle}>{getHeaderTitle()}</Text>
                 </View>
-                <Text style={styles.headerSubtitle}>Agent: {user?.email}</Text>
             </LinearGradient>
 
-            {/* Global Search & Status Filter */}
-            <View style={styles.globalSearchContainer}>
-                {/* Enhanced Search Bar with Hamburger */}
+            {/* Enhanced Search Bar */}
+            <View style={styles.searchContainer}>
                 <View style={styles.searchWrapper}>
-                    {/* Hamburger Menu (Left) */}
+                    {/* Hamburger Menu */}
                     <TouchableOpacity
                         style={styles.hamburgerButton}
-                        onPress={() => setActiveFilterSection(statusFilter === 'pending' || statusFilter === 'all' ? 'pending' : 'completed')}
+                        onPress={() => setActiveFilterSection(statusFilter === 'pending' ? 'pending' : 'completed')}
                         activeOpacity={0.7}
                     >
                         <Text style={styles.hamburgerIcon}>☰</Text>
@@ -341,68 +302,62 @@ export default function StaffDashboard() {
                         )}
                     </TouchableOpacity>
 
-                    {/* Search Input (Center) */}
+                    {/* Search Input */}
                     <TextInput
-                        style={styles.globalSearchInput}
-                        placeholder="Search all policies..."
+                        style={styles.searchInput}
+                        placeholder="Search by name or policy number..."
                         placeholderTextColor="#9ca3af"
                         value={globalSearch}
                         onChangeText={setGlobalSearch}
                     />
 
-                    {/* Search Icon (Right) */}
+                    {/* Search Icon */}
                     <Text style={styles.searchIconRight}>🔍</Text>
-                </View>
-
-                {/* Status Tabs */}
-                <View style={styles.statusTabs}>
-                    <TouchableOpacity
-                        style={[styles.statusTab, statusFilter === 'pending' && styles.statusTabActive]}
-                        onPress={() => setStatusFilter('pending')}
-                    >
-                        <View style={[styles.statusDot, statusFilter === 'pending' && styles.statusDotActive]} />
-                        <Text style={[styles.statusTabText, statusFilter === 'pending' && styles.statusTabTextActive]}>
-                            Pending ({pendingPolicies.length})
-                        </Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={[styles.statusTab, statusFilter === 'verified' && styles.statusTabActive]}
-                        onPress={() => setStatusFilter('verified')}
-                    >
-                        <View style={[styles.statusDot, statusFilter === 'verified' && styles.statusDotActive]} />
-                        <Text style={[styles.statusTabText, statusFilter === 'verified' && styles.statusTabTextActive]}>
-                            Verified ({completedPolicies.length})
-                        </Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={[styles.statusTab, statusFilter === 'all' && styles.statusTabActive]}
-                        onPress={() => setStatusFilter('all')}
-                    >
-                        <View style={[styles.statusDot, statusFilter === 'all' && styles.statusDotActive]} />
-                        <Text style={[styles.statusTabText, statusFilter === 'all' && styles.statusTabTextActive]}>
-                            All ({pendingPolicies.length + completedPolicies.length})
-                        </Text>
-                    </TouchableOpacity>
                 </View>
             </View>
 
-            {/* Policy List - Direct FlatList */}
-            <FlatList
-                data={getDisplayPolicies()}
-                renderItem={renderPolicyItem}
-                keyExtractor={item => item.id}
-                contentContainerStyle={styles.policyList}
-                ListEmptyComponent={
-                    <View style={styles.emptyContainer}>
-                        <Text style={styles.emptyIcon}>📭</Text>
-                        <Text style={styles.emptyText}>No policies found</Text>
-                    </View>
-                }
-            />
+            {loading ? (
+                <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="large" color="#f59e0b" />
+                </View>
+            ) : (
+                <FlatList
+                    data={filteredPolicies}
+                    keyExtractor={(item) => item.id}
+                    renderItem={({ item }) => (
+                        <TouchableOpacity
+                            style={styles.policyItem}
+                            onPress={() => openPolicyDetails(item)}
+                        >
+                            <View style={styles.policyRow}>
+                                <View style={styles.policyLeft}>
+                                    <Text style={styles.policyIcon}>
+                                        {item.status === 'verified' ? '✅' : '📄'}
+                                    </Text>
+                                    <View style={styles.policyInfo}>
+                                        <Text style={styles.policyName} numberOfLines={1}>
+                                            {item.customerName}
+                                        </Text>
+                                        <Text style={styles.policyNumber}>#{item.policyNumber}</Text>
+                                    </View>
+                                </View>
+                                <View style={styles.policyRight}>
+                                    <Text style={styles.policyAmount}>₹{item.amount.toLocaleString()}</Text>
+                                    <Text style={styles.viewArrow}>›</Text>
+                                </View>
+                            </View>
+                        </TouchableOpacity>
+                    )}
+                    ListEmptyComponent={
+                        <View style={styles.emptyContainer}>
+                            <Text style={styles.emptyText}>No policies found</Text>
+                        </View>
+                    }
+                    contentContainerStyle={{ paddingBottom: 100 }}
+                />
+            )}
 
-            {/* Filter Panel */}
+            {/* Filter Panels */}
             {activeFilterSection === 'pending' && (
                 <PolicyFilterPanel
                     visible={true}
@@ -419,11 +374,11 @@ export default function StaffDashboard() {
                     onClose={() => setActiveFilterSection(null)}
                     onApply={setCompletedFilters}
                     initialFilters={completedFilters}
-                    sectionTitle="Completed Policies"
+                    sectionTitle="Verified Policies"
                 />
             )}
 
-            {/* Policy Detail Modal (Keep existing modal code) */}
+            {/* Policy Detail Modal */}
             <Modal
                 animationType="slide"
                 transparent={true}
@@ -541,26 +496,15 @@ export default function StaffDashboard() {
                     </View>
                 </View>
             </Modal>
+
+
         </View>
     );
 }
-
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f9fafb',
-    },
-    loadingContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: '#f9fafb',
-    },
-    loadingText: {
-        marginTop: 12,
-        fontSize: 16,
-        color: '#6b7280',
-        fontWeight: '500',
+        backgroundColor: '#ffffff',
     },
     header: {
         paddingTop: 48,
@@ -571,32 +515,24 @@ const styles = StyleSheet.create({
     },
     headerTop: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 16,
+    },
+    backButton: {
+        marginRight: 16,
+        backgroundColor: 'rgba(255, 255, 255, 0.2)',
+        padding: 8,
+        borderRadius: 20,
+    },
+    backButtonText: {
+        color: '#ffffff',
+        fontSize: 18,
     },
     headerTitle: {
         color: '#ffffff',
-        fontSize: 24,
+        fontSize: 20,
         fontWeight: '700',
-        letterSpacing: 0.5,
     },
-    logoutButton: {
-        backgroundColor: 'rgba(255, 255, 255, 0.2)',
-        paddingHorizontal: 12,
-        paddingVertical: 4,
-        borderRadius: 16,
-    },
-    logoutText: {
-        color: '#ffffff',
-        fontWeight: '500',
-        fontSize: 12,
-    },
-    headerSubtitle: {
-        color: '#a7f3d0',
-        fontWeight: '500',
-    },
-    globalSearchContainer: {
+    searchContainer: {
         paddingHorizontal: 16,
         paddingVertical: 16,
         backgroundColor: '#ffffff',
@@ -612,7 +548,6 @@ const styles = StyleSheet.create({
         borderColor: '#e5e7eb',
         paddingHorizontal: 4,
         paddingVertical: 4,
-        marginBottom: 12,
     },
     hamburgerButton: {
         padding: 10,
@@ -630,7 +565,7 @@ const styles = StyleSheet.create({
         position: 'absolute',
         top: -4,
         right: -4,
-        backgroundColor: '#ef4444',
+        backgroundColor: '#f59e0b', // Orange for Manager theme
         borderRadius: 10,
         minWidth: 20,
         height: 20,
@@ -644,7 +579,7 @@ const styles = StyleSheet.create({
         fontSize: 11,
         fontWeight: '700',
     },
-    globalSearchInput: {
+    searchInput: {
         flex: 1,
         paddingVertical: 10,
         paddingHorizontal: 4,
@@ -657,63 +592,29 @@ const styles = StyleSheet.create({
         marginLeft: 8,
         paddingHorizontal: 8,
     },
-    statusTabs: {
-        flexDirection: 'row',
-        gap: 8,
-    },
-    statusTab: {
+    loadingContainer: {
         flex: 1,
-        flexDirection: 'row',
-        alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: 10,
-        borderRadius: 10,
-        backgroundColor: '#f3f4f6',
-        gap: 6,
-    },
-    statusTabActive: {
-        backgroundColor: '#dcfce7',
-    },
-    statusDot: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-        backgroundColor: '#9ca3af',
-    },
-    statusDotActive: {
-        backgroundColor: '#059669',
-    },
-    statusTabText: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: '#6b7280',
-    },
-    statusTabTextActive: {
-        color: '#059669',
-    },
-    cardsContainer: {
-        flex: 1,
-    },
-    policyList: {
-        paddingBottom: 100,
+        alignItems: 'center',
     },
     policyItem: {
-        paddingHorizontal: 16,
-        paddingVertical: 14,
         backgroundColor: '#ffffff',
-        borderBottomWidth: 1,
-        borderBottomColor: '#f3f4f6',
+        marginHorizontal: 16,
+        marginVertical: 6,
+        padding: 16,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
     },
     policyRow: {
         flexDirection: 'row',
-        alignItems: 'center',
         justifyContent: 'space-between',
+        alignItems: 'center',
     },
     policyLeft: {
         flexDirection: 'row',
         alignItems: 'center',
         flex: 1,
-        marginRight: 12,
     },
     policyIcon: {
         fontSize: 24,
@@ -725,45 +626,35 @@ const styles = StyleSheet.create({
     policyName: {
         fontSize: 16,
         fontWeight: '600',
-        color: '#111827',
-        marginBottom: 4,
+        color: '#1f2937',
+        marginBottom: 2,
     },
     policyNumber: {
-        fontSize: 13,
+        fontSize: 14,
         color: '#6b7280',
-        fontWeight: '500',
     },
     policyRight: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 8,
     },
     policyAmount: {
-        fontSize: 15,
+        fontSize: 16,
         fontWeight: '700',
-        color: '#059669',
+        color: '#1f2937',
+        marginRight: 8,
     },
     viewArrow: {
-        fontSize: 24,
+        fontSize: 20,
         color: '#9ca3af',
-        fontWeight: '300',
     },
     emptyContainer: {
+        padding: 48,
         alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 60,
-    },
-    emptyIcon: {
-        fontSize: 48,
-        marginBottom: 12,
-        opacity: 0.5,
     },
     emptyText: {
-        fontSize: 15,
-        color: '#9ca3af',
-        fontWeight: '500',
+        fontSize: 16,
+        color: '#6b7280',
     },
-    // Modal styles (keep existing)
     modalOverlay: {
         flex: 1,
         justifyContent: 'flex-end',
@@ -819,7 +710,7 @@ const styles = StyleSheet.create({
     detailAmount: {
         fontSize: 18,
         fontWeight: '700',
-        color: '#1e3a8a',
+        color: '#ea580c', // Orange instead of blue
     },
     detailRowDouble: {
         flexDirection: 'row',
@@ -865,7 +756,7 @@ const styles = StyleSheet.create({
         backgroundColor: '#f3f4f6',
     },
     uploadButton: {
-        backgroundColor: '#2563eb',
+        backgroundColor: '#f59e0b', // Orange
         padding: 16,
         borderRadius: 12,
         alignItems: 'center',
@@ -917,6 +808,31 @@ const styles = StyleSheet.create({
     },
     verifiedText: {
         color: '#166534',
+        fontWeight: '700',
+    },
+    errorContainer: {
+        backgroundColor: '#fee2e2',
+        padding: 16,
+        borderRadius: 12,
+        marginTop: 16,
+        borderLeftWidth: 4,
+        borderLeftColor: '#dc2626',
+    },
+    errorText: {
+        fontSize: 14,
+        color: '#991b1b',
+        marginBottom: 12,
+        lineHeight: 20,
+    },
+    retryButton: {
+        backgroundColor: '#f59e0b',
+        padding: 12,
+        borderRadius: 8,
+        alignItems: 'center',
+    },
+    retryButtonText: {
+        color: '#ffffff',
+        fontSize: 15,
         fontWeight: '700',
     },
 });

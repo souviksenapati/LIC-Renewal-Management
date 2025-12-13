@@ -8,7 +8,7 @@ import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { parseError } from '../utils/errorParser';
 
 export default function LoginScreen() {
-    const [activeTab, setActiveTab] = useState<'staff' | 'admin'>('staff');
+    const [activeTab, setActiveTab] = useState<'staff' | 'manager' | 'admin'>('staff');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
@@ -41,6 +41,8 @@ export default function LoginScreen() {
             await signIn(email, password, activeTab);
             if (activeTab === 'admin') {
                 router.replace('/admin/dashboard');
+            } else if (activeTab === 'manager') {
+                router.replace('/manager/dashboard');
             } else {
                 router.replace('/staff/dashboard');
             }
@@ -53,16 +55,29 @@ export default function LoginScreen() {
         }
     };
 
-    const isStaff = activeTab === 'staff';
-    const gradientColors = isStaff
-        ? ['#064e3b', '#065f46', '#059669'] as const
-        : ['#1e3a8a', '#1e40af', '#3b82f6'] as const;
+    const getGradientColors = () => {
+        if (activeTab === 'staff') return ['#064e3b', '#065f46', '#059669'] as const;
+        if (activeTab === 'manager') return ['#92400e', '#b45309', '#f59e0b'] as const; // Orange
+        return ['#1e3a8a', '#1e40af', '#3b82f6'] as const; // Admin blue
+    };
+
+    const getPortalIcon = () => {
+        if (activeTab === 'staff') return '💼';
+        if (activeTab === 'manager') return '👔';
+        return '🛡️'; // Admin
+    };
+
+    const getPortalName = () => {
+        if (activeTab === 'staff') return 'Staff Portal';
+        if (activeTab === 'manager') return 'Manager Portal';
+        return 'Admin Portal';
+    };
 
     return (
         <View style={styles.container}>
             <StatusBar style="light" />
             <LinearGradient
-                colors={gradientColors}
+                colors={getGradientColors()}
                 style={StyleSheet.absoluteFillObject}
             />
 
@@ -75,13 +90,13 @@ export default function LoginScreen() {
                     {/* Header / Logo Area */}
                     <View style={styles.header}>
                         <View style={styles.logoContainer}>
-                            <Text style={styles.logoEmoji}>{isStaff ? '💼' : '🛡️'}</Text>
+                            <Text style={styles.logoEmoji}>{getPortalIcon()}</Text>
                         </View>
                         <Text style={styles.title}>
                             LIC MANAGER
                         </Text>
                         <Text style={styles.subtitle}>
-                            {isStaff ? 'Staff Portal' : 'Admin Portal'}
+                            {getPortalName()}
                         </Text>
                     </View>
 
@@ -91,16 +106,22 @@ export default function LoginScreen() {
                         {/* Tabs */}
                         <View style={styles.tabContainer}>
                             <TouchableOpacity
-                                style={[styles.tab, isStaff && styles.tabActive]}
+                                style={[styles.tab, activeTab === 'staff' && styles.tabActive]}
                                 onPress={() => setActiveTab('staff')}
                             >
-                                <Text style={[styles.tabText, isStaff && styles.tabTextActive]}>Staff</Text>
+                                <Text style={[styles.tabText, activeTab === 'staff' && styles.tabTextActive]}>Staff</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
-                                style={[styles.tab, !isStaff && styles.tabActive]}
+                                style={[styles.tab, activeTab === 'manager' && styles.tabActive]}
+                                onPress={() => setActiveTab('manager')}
+                            >
+                                <Text style={[styles.tabText, activeTab === 'manager' && styles.tabTextActive]}>Manager</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.tab, activeTab === 'admin' && styles.tabActive]}
                                 onPress={() => setActiveTab('admin')}
                             >
-                                <Text style={[styles.tabText, !isStaff && styles.tabTextActive]}>Admin</Text>
+                                <Text style={[styles.tabText, activeTab === 'admin' && styles.tabTextActive]}>Admin</Text>
                             </TouchableOpacity>
                         </View>
 
@@ -110,7 +131,7 @@ export default function LoginScreen() {
                                 <Text style={styles.label}>Email Address</Text>
                                 <TextInput
                                     style={styles.input}
-                                    placeholder={isStaff ? "staff@lic.com" : "admin@lic.com"}
+                                    placeholder={activeTab === 'staff' ? "staff@lic.com" : activeTab === 'manager' ? "manager@lic.com" : "admin@lic.com"}
                                     placeholderTextColor="rgba(255,255,255,0.5)"
                                     value={email}
                                     onChangeText={setEmail}
@@ -136,7 +157,7 @@ export default function LoginScreen() {
                                 onPress={handleLogin}
                                 disabled={loading}
                             >
-                                <Text style={[styles.buttonText, isStaff ? styles.buttonTextStaff : styles.buttonTextAdmin]}>
+                                <Text style={[styles.buttonText, activeTab === 'staff' ? styles.buttonTextStaff : activeTab === 'manager' ? styles.buttonTextManager : styles.buttonTextAdmin]}>
                                     {loading ? 'Verifying...' : 'Sign In'}
                                 </Text>
                             </TouchableOpacity>
@@ -260,6 +281,9 @@ const styles = StyleSheet.create({
     },
     buttonTextStaff: {
         color: '#064e3b',
+    },
+    buttonTextManager: {
+        color: '#92400e', // Orange for manager
     },
     buttonTextAdmin: {
         color: '#1e3a8a',

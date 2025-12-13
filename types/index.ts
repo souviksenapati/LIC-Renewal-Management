@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'staff';
+export type UserRole = 'admin' | 'staff' | 'manager';
 
 export interface UserProfile {
     uid: string;
@@ -24,5 +24,29 @@ export interface Policy {
     receiptUrl?: string;
     uploadedBy?: string; // Staff UID
     uploadedAt?: number;
-    verifiedAt?: number;
 }
+
+// All Policies Database Types
+export type AllPolicyStatus = 'active' | 'lapsed' | 'matured' | 'surrendered';
+
+export type Frequency = 'Monthly' | 'Quarterly' | 'Half-Yearly' | 'Yearly';
+
+export interface AllPolicy {
+    id: string;
+    policyNumber: string;
+    customerName: string;
+    customerNumber: string; // Phone number
+    dateOfCreation: string; // DD/MM/YYYY
+    frequency: Frequency;
+    instalmentAmount: number;
+    dateOfBirth: string; // DD/MM/YYYY
+    address?: string; // Optional, default: 'N/A'
+    nomineeName?: string; // Optional, default: 'N/A'
+    nomineeNumber?: string; // Optional, default: 'N/A'
+    policyStatus: AllPolicyStatus;
+    createdBy: string; // Admin/Manager UID
+    createdAt: number;
+    updatedAt?: number;
+    updatedBy?: string;
+}
+
