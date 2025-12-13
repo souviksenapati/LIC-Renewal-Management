@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "LIC Renewal",
-    "slug": "LIC_APP",
+    "slug": "lic-app",
     "scheme": "licrenewal",
     "version": "1.0.1",
     "orientation": "portrait",
@@ -35,7 +35,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "d449a4e9-0869-4127-8577-1d0011737efe"
+        "projectId": "a4b8b6ef-79a1-4448-bad8-450c63d169b4"
       }
     }
   }
