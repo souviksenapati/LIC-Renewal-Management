@@ -1,6 +1,6 @@
-import { View, Text, FlatList, TouchableOpacity, TextInput, ActivityIndicator, Image, StyleSheet, Modal, ScrollView, Alert } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, TextInput, ActivityIndicator, Image, StyleSheet, Modal, ScrollView, Alert, RefreshControl } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { collection, query, orderBy, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
 import { Policy } from '../../types';
@@ -30,6 +30,9 @@ export default function AdminPolicies() {
         amountMax: 100000,
         sortBy: 'newest',
     });
+
+    // Pull-to-refresh state
+    const [refreshing, setRefreshing] = useState(false);
 
     useEffect(() => {
         const q = query(collection(db, 'policies'), orderBy('createdAt', 'desc'));
@@ -160,6 +163,13 @@ export default function AdminPolicies() {
         }
     };
 
+    // Pull-to-refresh handler
+    const onRefresh = useCallback(() => {
+        setRefreshing(true);
+        // onSnapshot list ener auto-updates, just provide user feedback
+        setTimeout(() => setRefreshing(false), 1000);
+    }, []);
+
     const openPolicyDetails = (policy: Policy) => {
         setSelectedPolicy(policy);
         setModalVisible(true);
@@ -286,6 +296,14 @@ export default function AdminPolicies() {
                     renderItem={renderItem}
                     keyExtractor={item => item.id}
                     contentContainerStyle={styles.listContent}
+                    refreshControl={
+                        <RefreshControl
+                            refreshing={refreshing}
+                            onRefresh={onRefresh}
+                            colors={['#3b82f6']}
+                            tintColor="#3b82f6"
+                        />
+                    }
                     ListEmptyComponent={
                         <Text style={styles.emptyText}>No policies found</Text>
                     }

@@ -1,6 +1,6 @@
-import { View, Text, FlatList, TextInput, TouchableOpacity, Alert, ActivityIndicator, Modal, ScrollView, Image, StyleSheet } from 'react-native';
+import { View, Text, FlatList, TextInput, TouchableOpacity, Alert, ActivityIndicator, Modal, ScrollView, Image, StyleSheet, RefreshControl } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { collection, query, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../../firebaseConfig';
@@ -50,6 +50,9 @@ export default function StaffDashboard() {
         amountMax: 100000,
         sortBy: 'newest',
     });
+
+    // Pull-to-refresh state
+    const [refreshing, setRefreshing] = useState(false);
 
     const [activeFilterSection, setActiveFilterSection] = useState<'pending' | 'completed' | null>(null);
 
@@ -177,6 +180,13 @@ export default function StaffDashboard() {
         return count;
     };
 
+    // Pull-to-refresh handler
+    const onRefresh = useCallback(() => {
+        setRefreshing(true);
+        // onSnapshot listener auto-updates, just provide user feedback
+        setTimeout(() => setRefreshing(false), 1000);
+    }, []);
+
     // Render policy item in FlatList
     const renderPolicyItem = ({ item }: { item: Policy }) => (
         <TouchableOpacity
@@ -222,9 +232,8 @@ export default function StaffDashboard() {
 
         const result = await ImagePicker.launchCameraAsync({
             mediaTypes: ['images'],
-            allowsEditing: true,
-            aspect: [4, 3],
-            quality: 0.5,
+            allowsEditing: false,  // Disabled to capture full portrait receipts
+            quality: 0.7,  // Increased quality for receipt clarity
         });
 
         if (!result.canceled) {
@@ -394,6 +403,14 @@ export default function StaffDashboard() {
                 renderItem={renderPolicyItem}
                 keyExtractor={item => item.id}
                 contentContainerStyle={styles.policyList}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={onRefresh}
+                        colors={['#059669']}
+                        tintColor="#059669"
+                    />
+                }
                 ListEmptyComponent={
                     <View style={styles.emptyContainer}>
                         <Text style={styles.emptyIcon}>📭</Text>

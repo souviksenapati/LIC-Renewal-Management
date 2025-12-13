@@ -1,6 +1,6 @@
-import { View, Text, FlatList, TouchableOpacity, TextInput, ActivityIndicator, Modal, ScrollView, StyleSheet, Alert } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, TextInput, ActivityIndicator, Modal, ScrollView, StyleSheet, Alert, RefreshControl } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { collection, query, onSnapshot, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
 import { AllPolicy } from '../../types';
@@ -13,6 +13,9 @@ export default function ManagerAllPolicies() {
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedPolicy, setSelectedPolicy] = useState<AllPolicy | null>(null);
     const [modalVisible, setModalVisible] = useState(false);
+
+    // Pull-to-refresh state
+    const [refreshing, setRefreshing] = useState(false);
 
     const router = useRouter();
     const params = useLocalSearchParams();
@@ -59,6 +62,13 @@ export default function ManagerAllPolicies() {
         setModalVisible(true);
     };
 
+    // Pull-to-refresh handler
+    const onRefresh = useCallback(() => {
+        setRefreshing(true);
+        // onSnapshot listener auto-updates, just provide user feedback
+        setTimeout(() => setRefreshing(false), 1000);
+    }, []);
+
     const filteredPolicies = getFilteredPolicies();
 
     const getHeaderTitle = () => {
@@ -103,6 +113,14 @@ export default function ManagerAllPolicies() {
                 <FlatList
                     data={filteredPolicies}
                     keyExtractor={(item) => item.id}
+                    refreshControl={
+                        <RefreshControl
+                            refreshing={refreshing}
+                            onRefresh={onRefresh}
+                            colors={['#3b82f6']}
+                            tintColor="#3b82f6"
+                        />
+                    }
                     renderItem={({ item }) => (
                         <TouchableOpacity
                             style={styles.policyItem}

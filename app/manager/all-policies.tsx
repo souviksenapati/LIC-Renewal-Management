@@ -1,6 +1,6 @@
-import { View, Text, FlatList, TouchableOpacity, TextInput, ActivityIndicator, Modal, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, TextInput, ActivityIndicator, Modal, ScrollView, StyleSheet, RefreshControl } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { collection, query, onSnapshot, where } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
 import { AllPolicy } from '../../types';
@@ -13,6 +13,9 @@ export default function ManagerAllPolicies() {
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedPolicy, setSelectedPolicy] = useState<AllPolicy | null>(null);
     const [modalVisible, setModalVisible] = useState(false);
+
+    // Pull-to-refresh state
+    const [refreshing, setRefreshing] = useState(false);
 
     const router = useRouter();
     const params = useLocalSearchParams();
@@ -59,6 +62,13 @@ export default function ManagerAllPolicies() {
         setModalVisible(true);
     };
 
+    // Pull-to-refresh handler
+    const onRefresh = useCallback(() => {
+        setRefreshing(true);
+        // onSnapshot listener auto-updates, just provide user feedback
+        setTimeout(() => setRefreshing(false), 1000);
+    }, []);
+
     const filteredPolicies = getFilteredPolicies();
 
     const getHeaderTitle = () => {
@@ -86,13 +96,14 @@ export default function ManagerAllPolicies() {
 
             {/* Search Bar */}
             <View style={styles.searchContainer}>
-                <Text style={styles.searchIcon}>🔍</Text>
                 <TextInput
                     style={styles.searchInput}
                     placeholder="Search by name, number, or policy..."
+                    placeholderTextColor="#9ca3af"
                     value={searchQuery}
                     onChangeText={setSearchQuery}
                 />
+                <Text style={styles.searchIconRight}>🔍</Text>
             </View>
 
             {loading ? (
@@ -103,6 +114,14 @@ export default function ManagerAllPolicies() {
                 <FlatList
                     data={filteredPolicies}
                     keyExtractor={(item) => item.id}
+                    refreshControl={
+                        <RefreshControl
+                            refreshing={refreshing}
+                            onRefresh={onRefresh}
+                            colors={['#f59e0b']}
+                            tintColor="#f59e0b"
+                        />
+                    }
                     renderItem={({ item }) => (
                         <TouchableOpacity
                             style={styles.policyItem}
@@ -275,19 +294,24 @@ const styles = StyleSheet.create({
     searchContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#f3f4f6',
+        backgroundColor: '#ffffff',
         margin: 16,
         paddingHorizontal: 16,
         paddingVertical: 12,
         borderRadius: 12,
-    },
-    searchIcon: {
-        fontSize: 18,
-        marginRight: 8,
+        borderWidth: 1.5,
+        borderColor: '#e5e7eb',
     },
     searchInput: {
         flex: 1,
         fontSize: 16,
+        color: '#111827',
+        paddingVertical: 4,
+    },
+    searchIconRight: {
+        fontSize: 18,
+        marginLeft: 8,
+        color: '#6b7280',
     },
     loadingContainer: {
         flex: 1,
@@ -360,7 +384,7 @@ const styles = StyleSheet.create({
     fab: {
         position: 'absolute',
         right: 24,
-        bottom: 24,
+        bottom: 80,  // Moved up from 24 to clear offline banner (~40px) + safe margin
         width: 60,
         height: 60,
         borderRadius: 30,

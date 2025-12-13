@@ -1,13 +1,12 @@
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, RefreshControl } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { collection, query, getDocs, where } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
 import { StatusBar } from 'expo-status-bar';
 import { useFocusEffect } from 'expo-router';
-import { useCallback } from 'react';
 
 export default function ManagerDashboard() {
     const { signOut, user } = useAuth();
@@ -19,6 +18,9 @@ export default function ManagerDashboard() {
         lapsedCount: 0
     });
     const [loadingStats, setLoadingStats] = useState(true);
+
+    // Pull-to-refresh state
+    const [refreshing, setRefreshing] = useState(false);
 
     useFocusEffect(
         useCallback(() => {
@@ -70,6 +72,13 @@ export default function ManagerDashboard() {
         }
     };
 
+    // Pull-to-refresh handler
+    const onRefresh = useCallback(async () => {
+        setRefreshing(true);
+        await fetchStats();
+        setRefreshing(false);
+    }, []);
+
     return (
         <View style={styles.container}>
             <StatusBar style="light" />
@@ -89,52 +98,53 @@ export default function ManagerDashboard() {
             <ScrollView
                 style={styles.scrollView}
                 contentContainerStyle={{ paddingBottom: 100, padding: 20 }}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={onRefresh}
+                        colors={['#f59e0b']}
+                        tintColor="#f59e0b"
+                    />
+                }
             >
                 {/* Stats Cards */}
-                {loadingStats ? (
-                    <View style={styles.loadingContainer}>
-                        <ActivityIndicator size="large" color="#f59e0b" />
-                        <Text style={styles.loadingText}>Loading dashboard...</Text>
-                    </View>
-                ) : (
-                    <View style={styles.statsContainer}>
-                        {/* Card 1: Current Month Pending */}
-                        <TouchableOpacity
-                            style={[styles.statCard, styles.statCardOrange]}
-                            onPress={() => router.push('/manager/current-policies?status=pending')}
-                        >
-                            <Text style={styles.statLabel}>Pending</Text>
-                            <Text style={styles.statValue}>{stats.pendingCount}</Text>
-                        </TouchableOpacity>
+                <View style={styles.statsContainer}>
+                    {/* Card 1: Current Month Pending */}
+                    <TouchableOpacity
+                        style={[styles.statCard, styles.statCardOrange]}
+                        onPress={() => router.push('/manager/current-policies?status=pending')}
+                    >
+                        <Text style={styles.statLabel}>Pending</Text>
+                        <Text style={styles.statValue}>{stats.pendingCount}</Text>
+                    </TouchableOpacity>
 
-                        {/* Card 2: Current Month Verified */}
-                        <TouchableOpacity
-                            style={[styles.statCard, styles.statCardGreen]}
-                            onPress={() => router.push('/manager/current-policies?status=verified')}
-                        >
-                            <Text style={styles.statLabel}>Verified</Text>
-                            <Text style={styles.statValue}>{stats.verifiedCount}</Text>
-                        </TouchableOpacity>
+                    {/* Card 2: Current Month Verified */}
+                    <TouchableOpacity
+                        style={[styles.statCard, styles.statCardGreen]}
+                        onPress={() => router.push('/manager/current-policies?status=verified')}
+                    >
+                        <Text style={styles.statLabel}>Verified</Text>
+                        <Text style={styles.statValue}>{stats.verifiedCount}</Text>
+                    </TouchableOpacity>
 
-                        {/* Card 3: Total Active Policies */}
-                        <TouchableOpacity
-                            style={[styles.statCard, styles.statCardBlue]}
-                            onPress={() => router.push('/manager/all-policies?status=active')}
-                        >
-                            <Text style={styles.statLabel}>Total Active</Text>
-                            <Text style={styles.statValue}>{stats.activeCount}</Text>
-                        </TouchableOpacity>
+                    {/* Card 3: Total Active Policies */}
+                    <TouchableOpacity
+                        style={[styles.statCard, styles.statCardBlue]}
+                        onPress={() => router.push('/manager/all-policies?status=active')}
+                    >
+                        <Text style={styles.statLabel}>Total Active</Text>
+                        <Text style={styles.statValue}>{stats.activeCount}</Text>
+                    </TouchableOpacity>
 
-                        {/* Card 4: Total Lapsed */}
-                        <TouchableOpacity
-                            style={[styles.statCard, styles.statCardRed]}
-                            onPress={() => router.push('/manager/all-policies?status=lapsed')}
-                        >
-                            <Text style={styles.statLabel}>Total Lapsed</Text>
-                            <Text style={styles.statValue}>{stats.lapsedCount}</Text>
-                        </TouchableOpacity>
-                    </View>
-                )}
+                    {/* Card 4: Total Lapsed */}
+                    <TouchableOpacity
+                        style={[styles.statCard, styles.statCardRed]}
+                        onPress={() => router.push('/manager/all-policies?status=lapsed')}
+                    >
+                        <Text style={styles.statLabel}>Total Lapsed</Text>
+                        <Text style={styles.statValue}>{stats.lapsedCount}</Text>
+                    </TouchableOpacity>
+                </View>
             </ScrollView>
         </View>
     );

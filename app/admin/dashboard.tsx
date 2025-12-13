@@ -1,13 +1,12 @@
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert, Modal } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert, Modal, RefreshControl } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { collection, query, getDocs, deleteDoc, where } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
 import { StatusBar } from 'expo-status-bar';
 import { useFocusEffect } from 'expo-router';
-import { useCallback } from 'react';
 
 export default function AdminDashboard() {
     const { signOut, user } = useAuth();
@@ -24,6 +23,9 @@ export default function AdminDashboard() {
     });
     const [loadingStats, setLoadingStats] = useState(true);
     const [clearing, setClearing] = useState(false);
+
+    // Pull-to-refresh state
+    const [refreshing, setRefreshing] = useState(false);
 
     useFocusEffect(
         useCallback(() => {
@@ -88,6 +90,13 @@ export default function AdminDashboard() {
             setLoadingStats(false);
         }
     };
+
+    // Pull-to-refresh handler
+    const onRefresh = useCallback(async () => {
+        setRefreshing(true);
+        await fetchStats();
+        setRefreshing(false);
+    }, []);
 
     const clearAllPolicies = async () => {
         try {
@@ -168,6 +177,14 @@ export default function AdminDashboard() {
             <ScrollView
                 style={styles.scrollView}
                 contentContainerStyle={{ paddingBottom: 100 }}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={onRefresh}
+                        colors={['#3b82f6']}
+                        tintColor="#3b82f6"
+                    />
+                }
             >
                 {/* Stats Cards */}
                 <View style={styles.statsContainer}>

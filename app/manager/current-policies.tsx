@@ -1,6 +1,6 @@
-import { View, Text, FlatList, TouchableOpacity, TextInput, ActivityIndicator, Modal, ScrollView, Image, StyleSheet, Alert } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, TextInput, ActivityIndicator, Modal, ScrollView, Image, StyleSheet, Alert, RefreshControl } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { collection, query, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../../firebaseConfig';
@@ -45,6 +45,9 @@ export default function ManagerCurrentPolicies() {
         sortBy: 'newest',
     });
     const [activeFilterSection, setActiveFilterSection] = useState<'pending' | 'completed' | null>(null);
+
+    // Pull-to-refresh state
+    const [refreshing, setRefreshing] = useState(false);
 
     const router = useRouter();
     const params = useLocalSearchParams();
@@ -202,6 +205,13 @@ export default function ManagerCurrentPolicies() {
         }
     };
 
+    // Pull-to-refresh handler
+    const onRefresh = useCallback(() => {
+        setRefreshing(true);
+        // onSnapshot listener auto-updates, just provide user feedback
+        setTimeout(() => setRefreshing(false), 1000);
+    }, []);
+
     const pickImage = async () => {
         if (!selectedPolicy) return;
 
@@ -212,9 +222,8 @@ export default function ManagerCurrentPolicies() {
 
         const result = await ImagePicker.launchCameraAsync({
             mediaTypes: ['images'],
-            allowsEditing: true,
-            aspect: [4, 3],
-            quality: 0.5,
+            allowsEditing: false,  // Disabled to capture full portrait receipts
+            quality: 0.7,  // Increased quality for receipt clarity
         });
 
         if (!result.canceled) {
@@ -324,6 +333,14 @@ export default function ManagerCurrentPolicies() {
                 <FlatList
                     data={filteredPolicies}
                     keyExtractor={(item) => item.id}
+                    refreshControl={
+                        <RefreshControl
+                            refreshing={refreshing}
+                            onRefresh={onRefresh}
+                            colors={['#f59e0b']}
+                            tintColor="#f59e0b"
+                        />
+                    }
                     renderItem={({ item }) => (
                         <TouchableOpacity
                             style={styles.policyItem}
