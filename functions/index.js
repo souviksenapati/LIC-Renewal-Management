@@ -99,22 +99,195 @@ exports.verifyReceipt = functions
                 const imageBuffer = await fs.promises.readFile(tempFilePath);
                 const imageBase64 = imageBuffer.toString('base64');
 
-                const prompt = `Analyze this payment receipt image and extract:
-1. Policy Number (9-digit number only, numeric)
-2. Customer Name
+                const prompt = `System Role: Act as a Senior Insurance Compliance Auditor and Forensic Document Specialist. You are an expert in LIC's internal ERP systems and the specific tax/regulatory mandates of the Government of India.
 
-IMPORTANT:
-- Policy number is ALWAYS 9 digits, purely numeric (e.g., 508815995)
-- Extract the exact name as written on receipt
-- If information is unclear or not found, return null
+═══════════════════════════════════════════════════════════════
+TASK 1: GRANULAR DATA EXTRACTION (JSON)
+═══════════════════════════════════════════════════════════════
+Extract ALL text from the receipt image into structured JSON. Focus on:
 
-Return ONLY valid JSON (no markdown):
-{"policyNumber": "508815995", "customerName": "CHHABI DAS", "confidence": "high"}
+UNIQUE IDENTIFIERS:
+- Policy No (9-digit numeric, e.g., 508815995)
+- Transaction No / Receipt No
+- Agency Code
+- Agency Reg No (GSTIN)
 
-If not found:
-{"policyNumber": null, "customerName": null, "confidence": "low"}`;
+GEOGRAPHIC MARKERS:
+- Branch Name
+- Branch Code
+- Address (full)
+- State
 
-                console.log('Calling Gemini for receipt analysis...');
+FINANCIAL INTEGRITY:
+- Net Premium / Installment Premium
+- Late Fee (if any)
+- CGST amount
+- SGST amount
+- Grand Total / Total Amount
+- Amount in Words
+
+POLICY LIFESPAN:
+- Date of Commencement (DOC)
+- Plan & Term
+- Next Due Date
+- Payment Mode (Yearly/Half-Yearly/Quarterly/Monthly)
+
+CUSTOMER DETAILS:
+- Policy Holder Name (if different)
+
+═══════════════════════════════════════════════════════════════
+TASK 2: INSTITUTIONAL INTEGRITY & CROSS-VERIFICATION
+═══════════════════════════════════════════════════════════════
+
+MATHEMATICAL INTEGRITY CHECK:
+✓ Calculate: InstallmentPremium + LateFee + CGST + SGST
+✓ Compare against Grand Total
+✓ Verify Amount in Words matches Grand Total numerically
+✓ Result: PASS or FAIL with discrepancy amount
+
+AGENCY-BRANCH DNA MATCH:
+✓ Verify Agency Code suffix matches Branch Code
+   Example: If Branch Code is 569, Agency Code should end with 569
+✓ Result: MATCH or MISMATCH
+
+GST-STATE ALIGNMENT:
+✓ Verify Agency Reg. No (GSTIN) starts with correct State Code
+   Examples: 19 = West Bengal, 27 = Maharashtra, 09 = Delhi
+✓ Result: VALID or INVALID
+
+EMAIL-BRANCH LOGIC:
+✓ Verify email follows format: BO_[BranchCode]@licindia.com
+   Example: BO_569@licindia.com for Branch 569
+✓ Result: VALID or INVALID
+
+═══════════════════════════════════════════════════════════════
+TASK 3: FORENSIC VISUAL INSPECTION
+═══════════════════════════════════════════════════════════════
+
+TYPOGRAPHY & PIXEL ARTIFACTS:
+✓ Inspect Policy Number, Customer Name, Total Amount
+✓ Look for "halos," blurring, different pixel densities
+✓ Check if numbers appear "patched" compared to static text
+✓ Finding: CLEAN, SUSPICIOUS_BLUR, or DIGITAL_TAMPERING
+
+MICRO-ALIGNMENT CHECK:
+✓ Verify vertical alignment of columns (Policy No, Premium, etc.)
+✓ System-generated PDFs have perfect mathematical alignment
+✓ Check for tilts or shifts indicating manual forgery
+✓ Finding: ALIGNED or MISALIGNED
+
+WATERMARK & BACKGROUND ANALYSIS:
+✓ Search for LIC "Hands" logo watermark in background
+✓ Check consistency and repetition pattern
+✓ Detect flat/clinical white backgrounds (forgery indicator)
+✓ Finding: WATERMARK_PRESENT or WATERMARK_MISSING
+
+QR CODE AUDIT:
+✓ Verify QR code exists in bottom-left quadrant
+✓ Check for compression artifacts
+✓ Compare QR code clarity vs surrounding text
+✓ Finding: QR_VALID, QR_BLURRY, or QR_MISSING
+
+
+STAMP DUTY CLAUSE VERIFICATION:
+✓ Check LOA Number format (e.g., CSD/50/2025/1518)
+✓ Verify font consistency with surrounding text
+✓ Finding: CONSISTENT or FONT_MISMATCH
+
+═══════════════════════════════════════════════════════════════
+TASK 4: RISK EVALUATION & VERIFICATION SUMMARY
+═══════════════════════════════════════════════════════════════
+
+Provide comprehensive verification assessment:
+
+AUTHENTICITY SCORE: 0-100%
+- 90-100%: Highly Authentic
+- 70-89%: Likely Authentic (Minor Issues)
+- 40-69%: Needs Review (Multiple Concerns)
+- 0-39%: Cannot Verify (Major Discrepancies)
+
+VERIFICATION ISSUES (If Any):
+List specific problems found (max 3 most critical):
+- Logic Breaks (e.g., "Branch-Agency code mismatch")
+- Visual Anomalies (e.g., "Font inconsistency in Amount field")
+- Mathematical Errors (e.g., "Total calculation off by ₹50")
+- Document Quality Issues (e.g., "Watermark missing")
+
+AUDIT STATUS:
+- VERIFIED: All checks passed, high confidence
+- NEEDS_REVIEW: One or more concerns found, manual review recommended
+- CANNOT_VERIFY: Multiple critical issues, unable to confirm authenticity
+
+═══════════════════════════════════════════════════════════════
+OUTPUT FORMAT (STRICT JSON - NO MARKDOWN)
+═══════════════════════════════════════════════════════════════
+
+{
+  "extractedData": {
+    "policyNumber": "508815995",
+    "customerName": "CHHABI DAS",
+    "transactionNo": "TXN1234567890",
+    "branchName": "Kolkata Branch",
+    "branchCode": "569",
+    "agencyCode": "56912345",
+    "agencyRegNo": "19ABCDE1234F1Z5",
+    "state": "West Bengal",
+    "netPremium": 8295.00,
+    "lateFee": 0,
+    "cgst": 746.55,
+    "sgst": 746.55,
+    "grandTotal": 9788.10,
+    "amountInWords": "Nine Thousand Seven Hundred Eighty Eight Rupees and Ten Paise Only",
+    "dateOfCommencement": "14/02/2025",
+    "planTerm": "736/25",
+    "nextDueDate": "14/05/2025",
+    "paymentMode": "Quarterly"
+  },
+  "integrityChecks": {
+    "mathematicalIntegrity": {
+      "status": "PASS",
+      "calculatedTotal": 9788.10,
+      "declaredTotal": 9788.10,
+      "discrepancy": 0,
+      "amountInWordsMatch": true
+    },
+    "agencyBranchMatch": {
+      "status": "MATCH",
+      "branchCode": "569",
+      "agencyCodeSuffix": "569"
+    },
+    "gstStateAlignment": {
+      "status": "VALID",
+      "stateCode": "19",
+      "stateName": "West Bengal"
+    },
+    "emailBranchLogic": {
+      "status": "VALID",
+      "expectedEmail": "BO_569@licindia.com",
+      "foundEmail": "BO_569@licindia.com"
+    }
+  },
+  "forensicAnalysis": {
+    "typographyCheck": "CLEAN",
+    "alignmentCheck": "ALIGNED",
+    "watermarkStatus": "WATERMARK_PRESENT",
+    "qrCodeStatus": "QR_VALID",
+    "stampDutyClauseCheck": "CONSISTENT"
+  },
+  "riskEvaluation": {
+    "authenticityScore": 95,
+    "verificationIssues": [],
+    "auditStatus": "VERIFIED",
+    "confidence": "high",
+    "recommendation": "APPROVE"
+  }
+}
+
+If data is unclear or missing, use null for that field. If the document has verification issues, set auditStatus to "CANNOT_VERIFY" and list top 2-3 verification issues (be specific and factual, avoid accusatory language).
+
+CRITICAL: Return ONLY the JSON object. No markdown formatting, no code blocks, no explanatory text.`;
+
+                console.log('Calling Gemini for forensic receipt analysis...');
 
                 const response = await getGeminiClient().models.generateContent({
                     model: 'gemini-2.5-flash',
@@ -132,28 +305,35 @@ If not found:
                 });
 
                 const responseText = response.text;
-                console.log('Gemini response:', responseText);
+                console.log('Gemini forensic analysis response:', responseText);
 
-                let extracted;
+                let analysisResult;
                 try {
-                    extracted = parseGeminiResponse(responseText);
+                    analysisResult = parseGeminiResponse(responseText);
                 } catch (parseError) {
                     console.error('Failed to parse Gemini response:', parseError);
                     throw new Error('Invalid JSON from Gemini');
                 }
 
-                const extractedPolicyNumber = extracted.policyNumber;
-                const extractedCustomerName = extracted.customerName;
-                const confidence = extracted.confidence || 'medium';
+                // Extract key data for verification
+                const extractedPolicyNumber = analysisResult.extractedData?.policyNumber;
+                const extractedCustomerName = analysisResult.extractedData?.customerName;
+                const authenticityScore = analysisResult.riskEvaluation?.authenticityScore || 0;
+                const auditStatus = analysisResult.riskEvaluation?.auditStatus || 'NEEDS_REVIEW';
+                const verificationIssues = analysisResult.riskEvaluation?.verificationIssues || [];
+                const confidence = analysisResult.riskEvaluation?.confidence || 'low';
 
-                console.log(`Extracted data for policy: ${policyId}, Confidence=${confidence}`);
+                console.log(`Extracted data for policy: ${policyId}, AuthenticityScore=${authenticityScore}%, Status=${auditStatus}`);
 
                 // Update log with extraction results
                 await logRef.update({
                     stage: 'verifying',
-                    message: 'Verifying against policy data...',
+                    message: 'Performing forensic verification...',
                     extractedPolicyNumber,
                     extractedCustomerName,
+                    authenticityScore,
+                    auditStatus,
+                    verificationIssues,
                     confidence
                 });
 
@@ -171,53 +351,87 @@ If not found:
                         expectedUpper.includes(extractedUpper);
                 }
 
-                console.log(`Verification: PolicyMatch=${policyNumberMatch}, NameMatch=${customerNameMatch}`);
+                console.log(`Verification: PolicyMatch=${policyNumberMatch}, NameMatch=${customerNameMatch}, AuthScore=${authenticityScore}%`);
 
-                // Determine verification result
-                const verificationPassed = policyNumberMatch && customerNameMatch;
+                // Enhanced verification: must pass data matching AND authenticity checks
+                const verificationPassed = policyNumberMatch && customerNameMatch &&
+                    authenticityScore >= 70 && auditStatus === 'VERIFIED';
 
                 if (verificationPassed) {
-                    // Update policy status to verified
+                    // Update policy status to verified with forensic analysis data
                     await policyDoc.ref.update({
                         status: 'verified',
                         verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
-                        verificationMethod: 'gemini-auto',
-                        extractedData: {
-                            policyNumber: extractedPolicyNumber,
-                            customerName: extractedCustomerName,
-                            confidence
+                        verificationMethod: 'gemini-forensic',
+                        forensicAnalysis: {
+                            authenticityScore,
+                            auditStatus,
+                            verificationIssues,
+                            confidence,
+                            extractedData: analysisResult.extractedData || {},
+                            integrityChecks: analysisResult.integrityChecks || {},
+                            visualInspection: analysisResult.forensicAnalysis || {},
+                            verifiedAt: Date.now()
                         }
                     });
 
                     await logRef.update({
                         stage: 'completed',
-                        message: 'Receipt verified successfully!',
+                        message: `✅ Receipt verified! Authenticity: ${authenticityScore}%`,
                         policyNumberMatch,
                         customerNameMatch,
                         verificationPassed: true,
+                        authenticityScore,
+                        auditStatus,
                         completedAt: Date.now(),
                         status: 'success'
                     });
 
-                    console.log(`✅ Policy ${policyId} verified successfully`);
+                    console.log(`✅ Policy ${policyId} verified successfully (Auth: ${authenticityScore}%, Status: ${auditStatus})`);
                 } else {
-                    // Verification failed - keep as pending, allow retry
+                    // Verification failed - collect top 3 specific reasons
                     const reasons = [];
-                    if (!policyNumberMatch) reasons.push('Policy number mismatch');
-                    if (!customerNameMatch) reasons.push('Customer name mismatch');
+
+                    // Add data mismatch issues first (most critical)
+                    if (!policyNumberMatch) {
+                        reasons.push('Policy number mismatch');
+                    }
+                    if (!customerNameMatch) {
+                        reasons.push('Customer name mismatch');
+                    }
+
+                    // Add authenticity issues
+                    if (authenticityScore < 70) {
+                        reasons.push(`Low authenticity (${authenticityScore}%)`);
+                    }
+
+                    // Add specific verification issues from AI analysis (limit to top 3 total)
+                    if (verificationIssues.length > 0) {
+                        const remainingSlots = 3 - reasons.length;
+                        verificationIssues.slice(0, remainingSlots).forEach(issue => {
+                            reasons.push(issue);
+                        });
+                    }
+
+                    // Ensure we show at most 3 reasons
+                    const topReasons = reasons.slice(0, 3);
 
                     await logRef.update({
                         stage: 'completed',
-                        message: `Verification failed: ${reasons.join(', ')}`,
+                        message: `Verification failed: ${topReasons.join('; ')}`,
                         policyNumberMatch,
                         customerNameMatch,
                         verificationPassed: false,
-                        failureReasons: reasons,
+                        authenticityScore,
+                        auditStatus,
+                        verificationIssues: topReasons,
+                        allIssues: verificationIssues, // Store all issues for admin review
+                        forensicDetails: analysisResult,
                         completedAt: Date.now(),
                         status: 'error'
                     });
 
-                    console.log(`❌ Policy ${policyId} verification failed: ${reasons.join(', ')}`);
+                    console.log(`⚠️ Policy ${policyId} verification incomplete: ${topReasons.join('; ')}`);
                 }
 
             } finally {

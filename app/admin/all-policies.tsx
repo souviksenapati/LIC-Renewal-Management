@@ -96,13 +96,14 @@ export default function ManagerAllPolicies() {
 
             {/* Search Bar */}
             <View style={styles.searchContainer}>
-                <Text style={styles.searchIcon}>🔍</Text>
                 <TextInput
                     style={styles.searchInput}
                     placeholder="Search by name, number, or policy..."
+                    placeholderTextColor="#9ca3af"
                     value={searchQuery}
                     onChangeText={setSearchQuery}
                 />
+                <Text style={styles.searchIconRight}>🔍</Text>
             </View>
 
             {loading ? (
@@ -328,19 +329,24 @@ const styles = StyleSheet.create({
     searchContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#f3f4f6',
+        backgroundColor: '#ffffff',
         margin: 16,
         paddingHorizontal: 16,
         paddingVertical: 12,
         borderRadius: 12,
-    },
-    searchIcon: {
-        fontSize: 18,
-        marginRight: 8,
+        borderWidth: 1.5,
+        borderColor: '#e5e7eb',
     },
     searchInput: {
         flex: 1,
         fontSize: 16,
+        color: '#111827',
+        paddingVertical: 4,
+    },
+    searchIconRight: {
+        fontSize: 18,
+        marginLeft: 8,
+        color: '#6b7280',
     },
     loadingContainer: {
         flex: 1,

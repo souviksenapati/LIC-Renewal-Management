@@ -252,7 +252,7 @@ export default function AdminPolicies() {
                     {/* Search Input */}
                     <TextInput
                         style={styles.searchInput}
-                        placeholder="Search by name or policy number..."
+                        placeholder="Search by name or policy number.."
                         placeholderTextColor="rgba(255,255,255,0.6)"
                         value={filter}
                         onChangeText={setFilter}
