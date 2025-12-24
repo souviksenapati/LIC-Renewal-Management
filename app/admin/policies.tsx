@@ -1,11 +1,12 @@
-import { View, Text, FlatList, TouchableOpacity, TextInput, ActivityIndicator, Image, StyleSheet, Modal, ScrollView, Alert } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, TextInput, ActivityIndicator, Image, StyleSheet, Modal, ScrollView, Alert, RefreshControl } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { collection, query, orderBy, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
 import { Policy } from '../../types';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import PolicyFilterPanel, { SectionFilterState } from '../../components/PolicyFilterPanel';
 
 export default function AdminPolicies() {
     const [policies, setPolicies] = useState<Policy[]>([]);
@@ -14,10 +15,24 @@ export default function AdminPolicies() {
     const [selectedPolicy, setSelectedPolicy] = useState<Policy | null>(null);
     const [modalVisible, setModalVisible] = useState(false);
     const [activeTab, setActiveTab] = useState<'action_needed' | 'awaiting'>('action_needed');
+    const [filterPanelVisible, setFilterPanelVisible] = useState(false);
 
     const router = useRouter();
     const params = useLocalSearchParams();
     const statusFilter = params.status as string | undefined;
+
+    // Advanced filters state
+    const [filters, setFilters] = useState<SectionFilterState>({
+        searchQuery: '',
+        dateFrom: null,
+        dateTo: null,
+        amountMin: 0,
+        amountMax: 100000,
+        sortBy: 'newest',
+    });
+
+    // Pull-to-refresh state
+    const [refreshing, setRefreshing] = useState(false);
 
     useEffect(() => {
         const q = query(collection(db, 'policies'), orderBy('createdAt', 'desc'));
@@ -33,42 +48,103 @@ export default function AdminPolicies() {
         return () => unsubscribe();
     }, []);
 
-    // Filter Logic
+    // Helper function to parse DD/MM/YYYY with proper error handling
+    const parseDMY = (dateStr: string): number => {
+        if (!dateStr || typeof dateStr !== 'string') return -1;
+        const parts = dateStr.split('/');
+        if (parts.length !== 3) return -1;
+        const [day, month, year] = parts.map(Number);
+        if (!day || !month || !year) return -1;
+        if (day > 31 || month > 12 || year < 1900) return -1;
+        const date = new Date(year, month - 1, day);
+        if (isNaN(date.getTime())) return -1;
+        return date.getTime();
+    };
+
+    // Enhanced filter logic with advanced filters
     const getFilteredData = () => {
-        // Sanitize user input to prevent regex injection
-        const sanitizeString = (str: string) => {
-            return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        };
+        let filtered = policies;
 
-        const searchLower = sanitizeString(filter.toLowerCase());
-
+        // Apply status filter from URL params
         if (statusFilter === 'pending') {
             if (activeTab === 'action_needed') {
-                return policies.filter(p =>
-                    p.status === 'pending' && p.receiptUrl &&
-                    (p.policyNumber.toLowerCase().includes(searchLower) || p.customerName.toLowerCase().includes(searchLower))
-                );
+                filtered = filtered.filter(p => p.status === 'pending' && p.receiptUrl);
             } else {
-                return policies.filter(p =>
-                    p.status === 'pending' && !p.receiptUrl &&
-                    (p.policyNumber.toLowerCase().includes(searchLower) || p.customerName.toLowerCase().includes(searchLower))
-                );
+                filtered = filtered.filter(p => p.status === 'pending' && !p.receiptUrl);
+            }
+        } else if (statusFilter) {
+            filtered = filtered.filter(p => p.status === statusFilter);
+        }
+
+        // Apply search filter with null safety
+        const searchQuery = filter.trim() || filters.searchQuery.trim();
+        if (searchQuery) {
+            const query = searchQuery.toLowerCase();
+            filtered = filtered.filter(p =>
+                (p.policyNumber?.toLowerCase().includes(query) || false) ||
+                (p.customerName?.toLowerCase().includes(query) || false)
+            );
+        }
+
+        // Apply date range filters
+        if (filters.dateFrom) {
+            const fromDate = parseDMY(filters.dateFrom);
+            if (fromDate > 0) {
+                filtered = filtered.filter(p => {
+                    const policyDate = parseDMY(p.dueDate);
+                    return policyDate > 0 && policyDate >= fromDate;
+                });
+            }
+        }
+        if (filters.dateTo) {
+            const toDate = parseDMY(filters.dateTo);
+            if (toDate > 0) {
+                filtered = filtered.filter(p => {
+                    const policyDate = parseDMY(p.dueDate);
+                    return policyDate > 0 && policyDate <= toDate;
+                });
             }
         }
 
-        return policies.filter(p => {
-            const matchesSearch = p.policyNumber.toLowerCase().includes(searchLower) ||
-                p.customerName.toLowerCase().includes(searchLower);
-            const matchesStatus = statusFilter ? p.status === statusFilter : true;
-            return matchesSearch && matchesStatus;
+        // Apply amount range filter with null safety
+        filtered = filtered.filter(p => {
+            const amount = p.amount ?? 0;
+            return amount >= filters.amountMin && amount <= filters.amountMax;
         });
+
+        // Apply sort with null safety
+        switch (filters.sortBy) {
+            case 'oldest':
+                filtered.sort((a, b) => parseDMY(a.dueDate) - parseDMY(b.dueDate));
+                break;
+            case 'amount_high':
+                filtered.sort((a, b) => (b.amount ?? 0) - (a.amount ?? 0));
+                break;
+            case 'amount_low':
+                filtered.sort((a, b) => (a.amount ?? 0) - (b.amount ?? 0));
+                break;
+            case 'newest':
+            default:
+                filtered.sort((a, b) => parseDMY(b.dueDate) - parseDMY(a.dueDate));
+        }
+
+        return filtered;
     };
 
-    const filteredPolicies = getFilteredData();
+    const filteredPolicies = useMemo(() => getFilteredData(), [policies, filter, filters, statusFilter, activeTab]);
 
     // Counts for tabs
     const actionNeededCount = policies.filter(p => p.status === 'pending' && p.receiptUrl).length;
     const awaitingCount = policies.filter(p => p.status === 'pending' && !p.receiptUrl).length;
+
+    // Count active filters
+    const getActiveFilterCount = () => {
+        let count = 0;
+        if (filters.dateFrom || filters.dateTo) count++;
+        if (filters.amountMax < 100000) count++;
+        if (filters.sortBy !== 'newest') count++;
+        return count;
+    };
 
     const verifyPolicy = async (id: string) => {
         try {
@@ -86,6 +162,13 @@ export default function AdminPolicies() {
             Alert.alert('Error', 'Failed to verify policy');
         }
     };
+
+    // Pull-to-refresh handler
+    const onRefresh = useCallback(() => {
+        setRefreshing(true);
+        // onSnapshot list ener auto-updates, just provide user feedback
+        setTimeout(() => setRefreshing(false), 1000);
+    }, []);
 
     const openPolicyDetails = (policy: Policy) => {
         setSelectedPolicy(policy);
@@ -150,13 +233,36 @@ export default function AdminPolicies() {
                     <Text style={styles.headerTitle}>{getHeaderTitle()}</Text>
                 </View>
 
-                <TextInput
-                    style={styles.searchInput}
-                    placeholder="Search by name or policy number..."
-                    placeholderTextColor="rgba(255,255,255,0.5)"
-                    value={filter}
-                    onChangeText={setFilter}
-                />
+                {/* Enhanced Search Bar with Hamburger and Search Icons */}
+                <View style={styles.searchContainer}>
+                    {/* Hamburger Menu */}
+                    <TouchableOpacity
+                        style={styles.hamburgerButton}
+                        onPress={() => setFilterPanelVisible(true)}
+                        activeOpacity={0.7}
+                    >
+                        <Text style={styles.hamburgerIcon}>☰</Text>
+                        {getActiveFilterCount() > 0 && (
+                            <View style={styles.filterBadge}>
+                                <Text style={styles.filterBadgeText}>{getActiveFilterCount()}</Text>
+                            </View>
+                        )}
+                    </TouchableOpacity>
+
+                    {/* Search Input */}
+                    <TextInput
+                        style={styles.searchInput}
+                        placeholder="Search by name or policy number.."
+                        placeholderTextColor="rgba(255,255,255,0.6)"
+                        value={filter}
+                        onChangeText={setFilter}
+                    />
+
+                    {/* Search Icon */}
+                    <View style={styles.searchIconContainer}>
+                        <Text style={styles.searchIcon}>🔍</Text>
+                    </View>
+                </View>
             </LinearGradient>
 
             {statusFilter === 'pending' && (
@@ -190,6 +296,14 @@ export default function AdminPolicies() {
                     renderItem={renderItem}
                     keyExtractor={item => item.id}
                     contentContainerStyle={styles.listContent}
+                    refreshControl={
+                        <RefreshControl
+                            refreshing={refreshing}
+                            onRefresh={onRefresh}
+                            colors={['#3b82f6']}
+                            tintColor="#3b82f6"
+                        />
+                    }
                     ListEmptyComponent={
                         <Text style={styles.emptyText}>No policies found</Text>
                     }
@@ -202,6 +316,15 @@ export default function AdminPolicies() {
             >
                 <Text style={styles.fabText}>+</Text>
             </TouchableOpacity>
+
+            {/* Filter Panel */}
+            <PolicyFilterPanel
+                visible={filterPanelVisible}
+                onClose={() => setFilterPanelVisible(false)}
+                onApply={setFilters}
+                initialFilters={filters}
+                sectionTitle="All Policies"
+            />
 
             {/* Policy Detail Modal */}
             <Modal
@@ -339,14 +462,58 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         letterSpacing: 0.5,
     },
-    searchInput: {
-        backgroundColor: 'rgba(255, 255, 255, 0.1)',
-        color: '#ffffff',
-        padding: 12,
+    searchContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255, 255, 255, 0.2)',
         borderRadius: 12,
-        fontSize: 16,
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.2)',
+        paddingVertical: 4,
+        paddingHorizontal: 4,
+    },
+    hamburgerButton: {
+        padding: 10,
+        borderRadius: 8,
+        backgroundColor: 'rgba(255, 255, 255, 0.2)',
+        marginRight: 8,
+        position: 'relative',
+    },
+    hamburgerIcon: {
+        color: '#ffffff',
+        fontSize: 20,
+        fontWeight: '600',
+    },
+    filterBadge: {
+        position: 'absolute',
+        top: -4,
+        right: -4,
+        backgroundColor: '#ef4444',
+        borderRadius: 10,
+        minWidth: 20,
+        height: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 2,
+        borderColor: '#ffffff',
+    },
+    filterBadgeText: {
+        color: '#ffffff',
+        fontSize: 11,
+        fontWeight: '700',
+    },
+    searchInput: {
+        flex: 1,
+        color: '#ffffff',
+        fontSize: 15,
+        fontWeight: '500',
+        paddingVertical: 8,
+        paddingHorizontal: 4,
+    },
+    searchIconContainer: {
+        padding: 8,
+        marginLeft: 4,
+    },
+    searchIcon: {
+        fontSize: 18,
     },
     // Tabs
     tabContainer: {
