@@ -16,12 +16,24 @@ service cloud.firestore {
       // Only admins can create/delete policies
       allow create, delete: if request.auth != null && getUserRole() == 'admin';
       
-      // Admins can update everything, staff can only update receiptUrl/uploadedBy/uploadedAt
+      // Admins can update everything staffand manager can only update receiptUrl/uploadedBy/uploadedAt
       allow update: if request.auth != null && (
         getUserRole() == 'admin' ||
-        (getUserRole() == 'staff' && 
+        ((getUserRole() == 'staff' || getUserRole() == 'manager') && 
          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['receiptUrl', 'uploadedBy', 'uploadedAt']))
       );
+    }
+    
+    // All Policies collection (master database)
+    match /all_policies/{policyId} {
+      // Everyone authenticated can read
+      allow read: if request.auth != null;
+      
+      // Admin and Manager can create
+      allow create: if request.auth != null && (getUserRole() == 'admin' || getUserRole() == 'manager');
+      
+      // Only admin can update and delete
+      allow update, delete: if request.auth != null && getUserRole() == 'admin';
     }
     
     // Processing logs - anyone can read, only Cloud Functions write

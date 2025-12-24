@@ -1,13 +1,12 @@
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert, Modal } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert, Modal, RefreshControl } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { collection, query, getDocs, deleteDoc, where } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
 import { StatusBar } from 'expo-status-bar';
 import { useFocusEffect } from 'expo-router';
-import { useCallback } from 'react';
 
 export default function AdminDashboard() {
     const { signOut, user } = useAuth();
@@ -18,10 +17,15 @@ export default function AdminDashboard() {
         verifiedCount: 0,
         pendingCount: 0,
         totalAmount: 0,
-        totalCommission: 0
+        totalCommission: 0,
+        activeAllPolicies: 0,
+        lapsedAllPolicies: 0
     });
     const [loadingStats, setLoadingStats] = useState(true);
     const [clearing, setClearing] = useState(false);
+
+    // Pull-to-refresh state
+    const [refreshing, setRefreshing] = useState(false);
 
     useFocusEffect(
         useCallback(() => {
@@ -32,6 +36,8 @@ export default function AdminDashboard() {
     const fetchStats = async () => {
         try {
             setLoadingStats(true);
+
+            // Fetch current month policies stats
             const q = query(collection(db, 'policies'));
             const querySnapshot = await getDocs(q);
 
@@ -53,13 +59,44 @@ export default function AdminDashboard() {
                 }
             });
 
-            setStats({ totalDue, verifiedCount, pendingCount, totalAmount, totalCommission });
+            // Fetch all_policies stats
+            const allPoliciesQuery = query(collection(db, 'all_policies'));
+            const allPoliciesSnapshot = await getDocs(allPoliciesQuery);
+
+            let activeAllPolicies = 0;
+            let lapsedAllPolicies = 0;
+
+            allPoliciesSnapshot.forEach((doc) => {
+                const data = doc.data();
+                if (data.policyStatus === 'active') {
+                    activeAllPolicies++;
+                } else if (['lapsed', 'matured', 'surrendered'].includes(data.policyStatus)) {
+                    lapsedAllPolicies++;
+                }
+            });
+
+            setStats({
+                totalDue,
+                verifiedCount,
+                pendingCount,
+                totalAmount,
+                totalCommission,
+                activeAllPolicies,
+                lapsedAllPolicies
+            });
         } catch (error) {
             console.error("Error fetching stats:", error);
         } finally {
             setLoadingStats(false);
         }
     };
+
+    // Pull-to-refresh handler
+    const onRefresh = useCallback(async () => {
+        setRefreshing(true);
+        await fetchStats();
+        setRefreshing(false);
+    }, []);
 
     const clearAllPolicies = async () => {
         try {
@@ -140,6 +177,14 @@ export default function AdminDashboard() {
             <ScrollView
                 style={styles.scrollView}
                 contentContainerStyle={{ paddingBottom: 100 }}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={onRefresh}
+                        colors={['#3b82f6']}
+                        tintColor="#3b82f6"
+                    />
+                }
             >
                 {/* Stats Cards */}
                 <View style={styles.statsContainer}>
@@ -170,6 +215,24 @@ export default function AdminDashboard() {
                         <Text style={styles.statValueBlue}>₹{stats.totalCommission.toLocaleString()}</Text>
                         <Text style={styles.statSubtext}>(Verified only)</Text>
                     </View>
+
+                    {/* New All Policies Stats */}
+                    <TouchableOpacity
+                        style={[styles.statCard, styles.statCardTeal]}
+                        onPress={() => router.push('/admin/all-policies?status=active')}
+                    >
+                        <Text style={styles.statLabel}>Total Active</Text>
+                        <Text style={styles.statValueTeal}>{stats.activeAllPolicies}</Text>
+                        <Text style={styles.statSubtext}>All policies • Master DB</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.statCard, styles.statCardRed]}
+                        onPress={() => router.push('/admin/all-policies?status=lapsed')}
+                    >
+                        <Text style={styles.statLabel}>Total Lapsed</Text>
+                        <Text style={styles.statValueRed}>{stats.lapsedAllPolicies}</Text>
+                        <Text style={styles.statSubtext}>All policies • Master DB</Text>
+                    </TouchableOpacity>
                 </View>
 
                 {/* Quick Actions */}
@@ -188,18 +251,7 @@ export default function AdminDashboard() {
                         </View>
                     </TouchableOpacity>
 
-                    <TouchableOpacity
-                        style={styles.actionCard}
-                        onPress={() => router.push('/admin/add-policy')}
-                    >
-                        <View style={styles.actionIcon}>
-                            <Text style={styles.actionIconText}>+</Text>
-                        </View>
-                        <View>
-                            <Text style={styles.actionTitle}>Add New Policy</Text>
-                            <Text style={styles.actionSubtitle}>Manually add a policy for renewal</Text>
-                        </View>
-                    </TouchableOpacity>
+
 
                     <TouchableOpacity
                         style={styles.actionCard}
@@ -358,6 +410,12 @@ const styles = StyleSheet.create({
     statCardBlue: {
         backgroundColor: '#dbeafe',
     },
+    statCardTeal: {
+        backgroundColor: '#ccfbf1',
+    },
+    statCardRed: {
+        backgroundColor: '#fee2e2',
+    },
     statLabel: {
         fontSize: 13,
         color: '#6b7280',
@@ -386,6 +444,18 @@ const styles = StyleSheet.create({
         fontSize: 24,
         fontWeight: '700',
         color: '#2563eb',
+        marginTop: 4,
+    },
+    statValueTeal: {
+        fontSize: 24,
+        fontWeight: '700',
+        color: '#0d9488',
+        marginTop: 4,
+    },
+    statValueRed: {
+        fontSize: 24,
+        fontWeight: '700',
+        color: '#dc2626',
         marginTop: 4,
     },
     statSubtext: {
