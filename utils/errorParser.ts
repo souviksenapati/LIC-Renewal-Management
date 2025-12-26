@@ -195,3 +195,31 @@ export const parseError = (error: any, context: string = 'general'): UserError =
         severity: 'error',
     };
 };
+
+/**
+ * Auto-formats date input to DD/MM/YYYY format
+ * Accepts both "26122026" and "26/12/2026" and formats to "26/12/2026"
+ * @param input - Raw input string from user
+ * @returns Formatted date string with slashes
+ * 
+ * @example
+ * formatDateInput("26122026") // Returns "26/12/2026"
+ * formatDateInput("26/12/2026") // Returns "26/12/2026"
+ * formatDateInput("261") // Returns "26/1"
+ */
+export const formatDateInput = (input: string): string => {
+    // Remove all non-digit characters
+    const digits = input.replace(/\D/g, '');
+
+    // Limit to 8 digits (DDMMYYYY)
+    const limitedDigits = digits.slice(0, 8);
+
+    // Auto-format with slashes at positions 2 and 4
+    if (limitedDigits.length <= 2) {
+        return limitedDigits;
+    } else if (limitedDigits.length <= 4) {
+        return `${limitedDigits.slice(0, 2)}/${limitedDigits.slice(2)}`;
+    } else {
+        return `${limitedDigits.slice(0, 2)}/${limitedDigits.slice(2, 4)}/${limitedDigits.slice(4)}`;
+    }
+};

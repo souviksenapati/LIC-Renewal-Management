@@ -5,6 +5,8 @@ import { db } from '../../firebaseConfig';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
+import { formatDateInput } from '../../utils/errorParser';
+import DateInput from '../../components/DateInput';
 
 export default function AddPolicy() {
     const [policyNumber, setPolicyNumber] = useState('');
@@ -104,15 +106,13 @@ export default function AddPolicy() {
                         />
                     </View>
 
-                    <View style={styles.inputGroup}>
-                        <Text style={styles.label}>Due Date</Text>
-                        <TextInput
-                            style={styles.input}
-                            placeholder="DD/MM/YYYY"
-                            value={dueDate}
-                            onChangeText={setDueDate}
-                        />
-                    </View>
+                    <DateInput
+                        label="Due Date"
+                        value={dueDate}
+                        onChangeText={setDueDate}
+                        placeholder="DD/MM/YYYY or DDMMYYYY"
+                        required
+                    />
 
                     <TouchableOpacity
                         style={[styles.saveButton, loading && styles.saveButtonDisabled]}

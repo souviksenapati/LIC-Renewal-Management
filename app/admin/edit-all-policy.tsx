@@ -7,6 +7,8 @@ import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../context/AuthContext';
 import { Frequency, AllPolicyStatus } from '../../types';
+import { formatDateInput } from '../../utils/errorParser';
+import DateInput from '../../components/DateInput';
 
 export default function AdminEditAllPolicy() {
     const [policyNumber, setPolicyNumber] = useState('');
@@ -281,17 +283,13 @@ export default function AdminEditAllPolicy() {
                         </View>
 
                         {/* Date of Creation */}
-                        <View style={styles.inputGroup}>
-                            <Text style={styles.label}>Date of Creation *</Text>
-                            <TextInput
-                                style={styles.input}
-                                placeholder="DD/MM/YYYY"
-                                value={dateOfCreation}
-                                onChangeText={setDateOfCreation}
-                                keyboardType="numeric"
-                                maxLength={10}
-                            />
-                        </View>
+                        <DateInput
+                            label="Date of Creation"
+                            value={dateOfCreation}
+                            onChangeText={setDateOfCreation}
+                            placeholder="DD/MM/YYYY or DDMMYYYY"
+                            required
+                        />
 
                         {/* Frequency */}
                         <View style={styles.inputGroup}>
@@ -322,17 +320,13 @@ export default function AdminEditAllPolicy() {
                         </View>
 
                         {/* Date of Birth */}
-                        <View style={styles.inputGroup}>
-                            <Text style={styles.label}>Date of Birth *</Text>
-                            <TextInput
-                                style={styles.input}
-                                placeholder="DD/MM/YYYY (age 18-100)"
-                                value={dateOfBirth}
-                                onChangeText={setDateOfBirth}
-                                keyboardType="numeric"
-                                maxLength={10}
-                            />
-                        </View>
+                        <DateInput
+                            label="Date of Birth"
+                            value={dateOfBirth}
+                            onChangeText={setDateOfBirth}
+                            placeholder="DD/MM/YYYY or DDMMYYYY"
+                            required
+                        />
 
                         {/* Address */}
                         <View style={styles.inputGroup}>
